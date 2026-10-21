@@ -279,6 +279,45 @@ const isoDate = () =>
 const q = (sql, ...args) => db.prepare(sql).get(...args),
   all = (sql, ...args) => db.prepare(sql).all(...args),
   run = (sql, ...args) => db.prepare(sql).run(...args);
+
+function autoProvisionAdmin() {
+  const adminEmail = (process.env.SUPER_ADMIN_EMAIL || process.env.ADMIN_EMAIL || "").trim();
+  const adminPassword = (process.env.SUPER_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || "").trim();
+  const adminName = (process.env.SUPER_ADMIN_NAME || process.env.ADMIN_NAME || "Super Admin").trim();
+
+  if (!adminEmail || !adminPassword) return;
+
+  const existingAdmin = q("SELECT id, email, password_hash FROM users WHERE role='admin' LIMIT 1");
+  if (existingAdmin) {
+    if (process.env.SYNC_ADMIN_CREDENTIALS === "true") {
+      const storedHash = passwordHash(adminPassword);
+      run("UPDATE users SET email=?, name=?, password_hash=?, active=1 WHERE id=?", adminEmail.toLowerCase(), adminName, storedHash, existingAdmin.id);
+      console.log(`[AUTH] Super Admin credentials synced for ${adminEmail.toLowerCase()}`);
+    }
+    return;
+  }
+
+  const existingUser = q("SELECT id FROM users WHERE lower(email)=lower(?)", adminEmail);
+  const storedHash = passwordHash(adminPassword);
+  const uid = existingUser ? existingUser.id : id();
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    if (existingUser) {
+      run("UPDATE users SET name=?, role='admin', password_hash=?, active=1 WHERE id=?", adminName, storedHash, uid);
+    } else {
+      run("INSERT INTO users(id,email,name,role,password_hash,created_at) VALUES(?,?,?,?,?,?)", uid, adminEmail.toLowerCase(), adminName, "admin", storedHash, now());
+      run("INSERT OR IGNORE INTO employees(user_id) VALUES(?)", uid);
+    }
+    audit(uid, "Auto-provisioned Super Admin from environment", "user", uid, "System startup bootstrap");
+    db.exec("COMMIT");
+    console.log(`[AUTH] Super Admin provisioned automatically from environment: ${adminEmail.toLowerCase()}`);
+  } catch (err) {
+    db.exec("ROLLBACK");
+    console.error(`[AUTH] Failed to auto-provision Super Admin: ${err.message}`);
+  }
+}
+autoProvisionAdmin();
 function nextEmployeeCode() {
   const used = new Set(all("SELECT employee_code FROM employees WHERE employee_code<>''").map((row) => String(row.employee_code).toUpperCase()));
   let sequence = all("SELECT employee_code FROM employees").reduce((max, row) => {
@@ -1383,7 +1422,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 });
-const host = process.env.HOST || "127.0.0.1",
+const host = process.env.HOST || (process.env.NODE_ENV === "production" || process.env.RENDER ? "0.0.0.0" : "127.0.0.1"),
   port = Number(process.env.PORT) || 3000;
 async function readHidden(prompt) {
   if (!stdin.isTTY || !stdout.isTTY || typeof stdin.setRawMode !== "function")
