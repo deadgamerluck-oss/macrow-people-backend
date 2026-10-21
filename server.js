@@ -422,37 +422,56 @@ function nextEmployeeCode() {
   return code;
 }
 const secure = process.env.NODE_ENV === "production";
-const ALLOWED_ORIGIN = (() => {
+function getAllowedOrigins() {
+  const list = [];
   try {
-    return new URL(appBaseUrl()).origin;
-  } catch {
-    return "";
+    const origin = new URL(appBaseUrl()).origin;
+    if (origin) list.push(origin);
+  } catch {}
+  if (process.env.CLIENT_ORIGIN) {
+    for (const o of process.env.CLIENT_ORIGIN.split(",")) {
+      const trimmed = o.trim().replace(/\/+$/, "");
+      if (trimmed && !list.includes(trimmed)) list.push(trimmed);
+    }
   }
-})();
+  if (process.env.CORS_ORIGINS) {
+    for (const o of process.env.CORS_ORIGINS.split(",")) {
+      const trimmed = o.trim().replace(/\/+$/, "");
+      if (trimmed && !list.includes(trimmed)) list.push(trimmed);
+    }
+  }
+  return list;
+}
 
 function isAllowedOrigin(origin) {
-  if (!origin) return false;
-  if (origin === ALLOWED_ORIGIN) return true;
+  if (!origin) return true;
+  const allowed = getAllowedOrigins();
+  if (allowed.includes("*") || allowed.includes(origin)) return true;
   if (!secure && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
     return true;
+  // If no custom CORS origin was explicitly set, permit HTTP/HTTPS origins in non-strict modes or log
+  if (process.env.ALLOW_ALL_CORS === "true") return true;
   return false;
 }
 
 function handleCors(req, res) {
   const origin = req.headers.origin;
-  if (isAllowedOrigin(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Vary", "Origin");
+  } else if (!origin) {
+    // Non-browser or direct curl/healthcheck requests
+    res.setHeader("Access-Control-Allow-Origin", "*");
   }
   if (req.method === "OPTIONS") {
-    if (isAllowedOrigin(origin)) {
+    if (!origin || isAllowedOrigin(origin)) {
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Origin": origin || "*",
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods":
           "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token",
+        "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, Authorization",
         "Access-Control-Max-Age": "86400",
         Vary: "Origin",
       });
@@ -460,7 +479,7 @@ function handleCors(req, res) {
       return true;
     }
     res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: "Origin not allowed." }));
+    res.end(JSON.stringify({ error: `Origin '${origin}' not allowed by CORS. Set CLIENT_ORIGIN or CORS_ORIGINS to include this domain.` }));
     return true;
   }
   return false;
@@ -474,19 +493,25 @@ function json(res, status, obj, headers = {}) {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy":
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://macrow-people-hrm.onrender.com https://people.macrowdigital.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      "default-src 'self' 'unsafe-inline' https: data:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src *; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     "X-Frame-Options": "DENY",
     ...headers,
   });
   res.end(JSON.stringify(obj));
 }
 function cookie(res, token, maxAge = 28800) {
-  let name = secure ? "__Host-macrow_session" : "macrow_session";
-  const sameSite = secure ? "None" : "Lax";
-  const secureAttr = secure ? "; Secure" : "";
+  // Use SameSite=None and Secure=true for cross-origin frontend (e.g. Hostinger frontend -> Render API)
+  // When SameSite=None, modern browsers require Secure flag.
+  const isSecureCookie = secure || process.env.RENDER || Boolean(process.env.HTTPS);
+  const sameSite = isSecureCookie ? "None" : "Lax";
+  const secureAttr = isSecureCookie ? "; Secure" : "";
+  // Note: __Host- prefix requires cookie to be set from same-origin with Secure flag.
+  // When cross-origin (Hostinger to Render), __Host- prefix can cause browsers to discard cookie,
+  // so use standard cookie name macrow_session.
+  const name = "macrow_session";
   res.setHeader(
     "Set-Cookie",
-    `${name}=${token}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${secureAttr}`,
+    `${name}=${token}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${secureAttr}; Partitioned`,
   );
 }
 function clearCookie(res) {
