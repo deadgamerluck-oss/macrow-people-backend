@@ -1422,7 +1422,10 @@ const server = http.createServer(async (req, res) => {
     });
   }
 });
-const host = process.env.HOST || (process.env.NODE_ENV === "production" || process.env.RENDER ? "0.0.0.0" : "127.0.0.1"),
+const isCloudDeployment = Boolean(process.env.RENDER || process.env.NODE_ENV === "production");
+const host = (isCloudDeployment && (!process.env.HOST || process.env.HOST === "127.0.0.1" || process.env.HOST === "localhost"))
+  ? "0.0.0.0"
+  : (process.env.HOST || "127.0.0.1"),
   port = Number(process.env.PORT) || 3000;
 async function readHidden(prompt) {
   if (!stdin.isTTY || !stdout.isTTY || typeof stdin.setRawMode !== "function")
