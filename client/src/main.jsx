@@ -3,6 +3,12 @@ import { createRoot } from "react-dom/client";
 import { calculatePayrollDays } from "./payroll-days.mjs";
 import { API_BASE_URL } from "./config.js";
 
+const SUPER_ADMIN_NAV = [
+  ["Overview", "◫"],
+  ["Companies", "🏢"],
+  ["Audit log", "≡"],
+  ["Settings", "⚙"],
+];
 const ADMIN_NAV = [
   ["Overview", "◫"],
   ["Employees", "♙"],
@@ -33,6 +39,7 @@ const EMP_NAV = [
   ["Documents & policies", "▧"],
 ];
 const ROLE_NAV = {
+  super_admin: SUPER_ADMIN_NAV,
   hr_manager: [
     ["Overview", "◫"],
     ["Employees", "♙"],
@@ -63,7 +70,11 @@ const ROLE_NAV = {
   ],
 };
 function groupedNavigation(navigation, role) {
-  const sections = role === "employee" ? [
+  const sections = role === "super_admin" ? [
+    ["WORKSPACE", ["Overview"]],
+    ["PLATFORM", ["Companies"]],
+    ["ADMINISTRATION", ["Audit log", "Settings"]],
+  ] : role === "employee" ? [
     ["WORKSPACE", ["Overview", "My tasks", "My daily updates"]],
     ["COMPANY", ["Company updates", "Calendar"]],
     ["TIME & ATTENDANCE", ["My attendance", "My leave & requests"]],
@@ -80,6 +91,7 @@ function groupedNavigation(navigation, role) {
 }
 
 let csrf = "";
+let authToken = typeof window !== "undefined" ? (localStorage.getItem("macrow_token") || "") : "";
 async function api(url, options = {}) {
   const fullUrl = url.startsWith("http://") || url.startsWith("https://")
     ? url
@@ -88,6 +100,9 @@ async function api(url, options = {}) {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
+  if (authToken && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
   if (options.method && options.method !== "GET" && csrf)
     headers["X-CSRF-Token"] = csrf;
   const response = await fetch(fullUrl, {
@@ -98,8 +113,12 @@ async function api(url, options = {}) {
   const data = await response
     .json()
     .catch(() => ({ error: "Unexpected response" }));
-  if (!response.ok)
+  if (!response.ok) {
+    if (response.status === 401 && !url.includes("/api/login") && !url.includes("/api/me")) {
+      window.dispatchEvent(new CustomEvent("macrow:unauthorized"));
+    }
     throw new Error(data.error || `Request failed (${response.status})`);
+  }
   if (data.csrf) csrf = data.csrf;
   return data;
 }
@@ -115,14 +134,39 @@ const workdayGreeting = () => {
   return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 };
 const workdayDate = () => new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", month: "long", day: "numeric" }).format(new Date());
-const dailyQuotes = ["Small steps, thoughtfully taken, make meaningful progress.","Good work grows when people share ideas and help each other.","Focus on what you can move forward today.","Every clear update makes teamwork a little easier.","Progress is built one useful task at a time.","Bring curiosity to the work and kindness to the people around you."];
-const quoteForToday = () => dailyQuotes[Math.floor((Date.now() - new Date(new Date().getFullYear(),0,0).getTime()) / 86400000) % dailyQuotes.length];
-const observanceCalendar = {"01-04":"World Braille Day","01-12":"National Youth Day","01-24":"International Day of Education","01-25":"National Voters' Day","01-26":"Republic Day · International Clean Energy Day","01-30":"Martyrs' Day","02-04":"World Cancer Day","02-11":"International Day of Women and Girls in Science","02-13":"World Radio Day","02-20":"World Day of Social Justice","02-21":"International Mother Language Day","02-28":"National Science Day","03-03":"World Wildlife Day","03-08":"International Women's Day","03-20":"International Day of Happiness","03-21":"International Day of Forests","03-22":"World Water Day","03-23":"World Meteorological Day","04-02":"World Autism Awareness Day","04-07":"World Health Day","04-14":"Dr. B. R. Ambedkar Jayanti","04-22":"International Mother Earth Day","04-23":"World Book and Copyright Day","04-24":"National Panchayati Raj Day","05-01":"International Workers' Day","05-03":"World Press Freedom Day","05-11":"National Technology Day","05-15":"International Day of Families","05-22":"International Day for Biological Diversity","05-31":"World No Tobacco Day","06-05":"World Environment Day","06-08":"World Oceans Day","06-12":"World Day Against Child Labour","06-21":"International Day of Yoga","07-11":"World Population Day","07-15":"World Youth Skills Day","07-18":"Nelson Mandela International Day","07-26":"Kargil Vijay Diwas","07-30":"International Day of Friendship","08-12":"International Youth Day","08-15":"India Independence Day","08-19":"World Humanitarian Day","08-29":"National Sports Day","09-05":"Teachers' Day (India)","09-08":"International Literacy Day","09-15":"International Day of Democracy","09-16":"World Ozone Day","09-21":"International Day of Peace","09-27":"World Tourism Day","10-01":"International Day of Older Persons","10-02":"Gandhi Jayanti · International Day of Non-Violence","10-05":"World Teachers' Day","10-10":"World Mental Health Day","10-11":"International Day of the Girl Child","10-16":"World Food Day","10-24":"United Nations Day","11-11":"National Education Day","11-14":"Children's Day (India) · World Diabetes Day","11-19":"World Toilet Day","11-20":"World Children's Day","11-26":"Constitution Day (India)","12-03":"International Day of Persons with Disabilities","12-05":"World Soil Day","12-10":"Human Rights Day","12-11":"International Mountain Day","12-23":"National Farmers' Day"};
-const festivalCalendar = {"2026-01-14":"Makar Sankranti / Pongal","2026-01-23":"Basant Panchami","2026-02-15":"Maha Shivratri","2026-03-04":"Holi","2026-03-21":"Eid al-Fitr · date may vary by moon sighting","2026-03-26":"Ram Navami","2026-03-31":"Mahavir Jayanti","2026-04-03":"Good Friday","2026-04-05":"Easter Sunday","2026-04-14":"Vaisakhi / Vishu","2026-05-01":"Buddha Purnima","2026-05-28":"Eid al-Adha · date may vary by moon sighting","2026-06-26":"Muharram · date may vary by moon sighting","2026-08-15":"Parsi New Year · Independence Day","2026-08-26":"Onam · Milad-un-Nabi (moon sighting)","2026-08-28":"Raksha Bandhan","2026-09-04":"Janmashtami","2026-10-20":"Dussehra / Vijayadashami","2026-11-08":"Diwali · date may vary by regional calendar","2026-11-24":"Guru Nanak Jayanti","2026-12-25":"Christmas Day"};
-const indiaObservance = (key) => festivalCalendar[String(key||"").slice(0,10)] || observanceCalendar[String(key||"").slice(5)] || "";
+const dailyQuotes = ["Small steps, thoughtfully taken, make meaningful progress.", "Good work grows when people share ideas and help each other.", "Focus on what you can move forward today.", "Every clear update makes teamwork a little easier.", "Progress is built one useful task at a time.", "Bring curiosity to the work and kindness to the people around you."];
+const quoteForToday = () => dailyQuotes[Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000) % dailyQuotes.length];
+const observanceCalendar = { "01-04": "World Braille Day", "01-12": "National Youth Day", "01-24": "International Day of Education", "01-25": "National Voters' Day", "01-26": "Republic Day · International Clean Energy Day", "01-30": "Martyrs' Day", "02-04": "World Cancer Day", "02-11": "International Day of Women and Girls in Science", "02-13": "World Radio Day", "02-20": "World Day of Social Justice", "02-21": "International Mother Language Day", "02-28": "National Science Day", "03-03": "World Wildlife Day", "03-08": "International Women's Day", "03-20": "International Day of Happiness", "03-21": "International Day of Forests", "03-22": "World Water Day", "03-23": "World Meteorological Day", "04-02": "World Autism Awareness Day", "04-07": "World Health Day", "04-14": "Dr. B. R. Ambedkar Jayanti", "04-22": "International Mother Earth Day", "04-23": "World Book and Copyright Day", "04-24": "National Panchayati Raj Day", "05-01": "International Workers' Day", "05-03": "World Press Freedom Day", "05-11": "National Technology Day", "05-15": "International Day of Families", "05-22": "International Day for Biological Diversity", "05-31": "World No Tobacco Day", "06-05": "World Environment Day", "06-08": "World Oceans Day", "06-12": "World Day Against Child Labour", "06-21": "International Day of Yoga", "07-11": "World Population Day", "07-15": "World Youth Skills Day", "07-18": "Nelson Mandela International Day", "07-26": "Kargil Vijay Diwas", "07-30": "International Day of Friendship", "08-12": "International Youth Day", "08-15": "India Independence Day", "08-19": "World Humanitarian Day", "08-29": "National Sports Day", "09-05": "Teachers' Day (India)", "09-08": "International Literacy Day", "09-15": "International Day of Democracy", "09-16": "World Ozone Day", "09-21": "International Day of Peace", "09-27": "World Tourism Day", "10-01": "International Day of Older Persons", "10-02": "Gandhi Jayanti · International Day of Non-Violence", "10-05": "World Teachers' Day", "10-10": "World Mental Health Day", "10-11": "International Day of the Girl Child", "10-16": "World Food Day", "10-24": "United Nations Day", "11-11": "National Education Day", "11-14": "Children's Day (India) · World Diabetes Day", "11-19": "World Toilet Day", "11-20": "World Children's Day", "11-26": "Constitution Day (India)", "12-03": "International Day of Persons with Disabilities", "12-05": "World Soil Day", "12-10": "Human Rights Day", "12-11": "International Mountain Day", "12-23": "National Farmers' Day" };
+const festivalCalendar = { "2026-01-14": "Makar Sankranti / Pongal", "2026-01-23": "Basant Panchami", "2026-02-15": "Maha Shivratri", "2026-03-04": "Holi", "2026-03-21": "Eid al-Fitr · date may vary by moon sighting", "2026-03-26": "Ram Navami", "2026-03-31": "Mahavir Jayanti", "2026-04-03": "Good Friday", "2026-04-05": "Easter Sunday", "2026-04-14": "Vaisakhi / Vishu", "2026-05-01": "Buddha Purnima", "2026-05-28": "Eid al-Adha · date may vary by moon sighting", "2026-06-26": "Muharram · date may vary by moon sighting", "2026-08-15": "Parsi New Year · Independence Day", "2026-08-26": "Onam · Milad-un-Nabi (moon sighting)", "2026-08-28": "Raksha Bandhan", "2026-09-04": "Janmashtami", "2026-10-20": "Dussehra / Vijayadashami", "2026-11-08": "Diwali · date may vary by regional calendar", "2026-11-24": "Guru Nanak Jayanti", "2026-12-25": "Christmas Day" };
+const indiaObservance = (key) => festivalCalendar[String(key || "").slice(0, 10)] || observanceCalendar[String(key || "").slice(5)] || "";
 const commonLeaveTypes = ["Sick Leave", "Casual Leave", "Maternity Leave", "Paternity Leave", "Parental Leave", "Adoption Leave", "Bereavement Leave", "Unpaid Leave"];
-function leaveDateSummary(start, end, events = []) { if(!start||!end||end<start)return {eligible:0,weekends:0,holidays:0};let eligible=0,weekends=0,holidays=0;for(let d=new Date(`${start}T12:00:00`);d<=new Date(`${end}T12:00:00`);d.setDate(d.getDate()+1)){const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;const weekend=d.getDay()===0||d.getDay()===6,holiday=events.some(e=>e.kind==="holiday"&&key>=e.start_date&&key<=(e.end_date||e.start_date));if(weekend)weekends++;else if(holiday)holidays++;else eligible++;}return {eligible,weekends,holidays};}
-async function resizedImageData(file,maxBytes=1_500_000){if(!file||!/^image\/(png|jpeg|webp)$/.test(file.type))throw new Error("Choose a PNG, JPEG, or WebP image.");const source=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error("Could not read image."));r.readAsDataURL(file)});const img=await new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(new Error("Image could not be opened."));i.src=source});const scale=Math.min(1,1400/Math.max(img.width,img.height));const canvas=document.createElement("canvas");canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);let q=.88,data=canvas.toDataURL("image/jpeg",q);while(data.length>maxBytes*1.35&&q>.45){q-=.1;data=canvas.toDataURL("image/jpeg",q)}if(data.length>maxBytes*1.35)throw new Error("Image is too large after compression. Choose a smaller image.");return data;}
+function leaveDateSummary(start, end, events = []) { if (!start || !end || end < start) return { eligible: 0, weekends: 0, holidays: 0 }; let eligible = 0, weekends = 0, holidays = 0; for (let d = new Date(`${start}T12:00:00`); d <= new Date(`${end}T12:00:00`); d.setDate(d.getDate() + 1)) { const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; const weekend = d.getDay() === 0 || d.getDay() === 6, holiday = events.some(e => e.kind === "holiday" && key >= e.start_date && key <= (e.end_date || e.start_date)); if (weekend) weekends++; else if (holiday) holidays++; else eligible++; } return { eligible, weekends, holidays }; }
+async function resizedImageData(file, maxBytes = 1_500_000) { if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error("Choose a PNG, JPEG, or WebP image."); const source = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(new Error("Could not read image.")); r.readAsDataURL(file) }); const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error("Image could not be opened.")); i.src = source }); const scale = Math.min(1, 1400 / Math.max(img.width, img.height)); const canvas = document.createElement("canvas"); canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale); canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height); let q = .88, data = canvas.toDataURL("image/jpeg", q); while (data.length > maxBytes * 1.35 && q > .45) { q -= .1; data = canvas.toDataURL("image/jpeg", q) } if (data.length > maxBytes * 1.35) throw new Error("Image is too large after compression. Choose a smaller image."); return data; }
+async function downloadPayrollCsv(period, toast) {
+  try {
+    const url = `/api/hrm/reports/payroll.csv?period=${encodeURIComponent(period || today().slice(0, 7))}`;
+    const fullUrl = url.startsWith("http://") || url.startsWith("https://") ? url : `${API_BASE_URL}${url}`;
+    const headers = {};
+    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+    const res = await fetch(fullUrl, { headers, credentials: "include" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to download CSV (${res.status})`);
+    }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = `macrow-payroll-${period || today().slice(0, 7)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  } catch (err) {
+    if (toast) toast(err.message || "Failed to download payroll CSV");
+    else alert(err.message || "Failed to download payroll CSV");
+  }
+}
 const showTime = (value) =>
   value
     ? new Date(value).toLocaleString("en-IN", {
@@ -440,8 +484,22 @@ function App() {
       }
     })();
   }, [invitation]);
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      csrf = "";
+      authToken = "";
+      localStorage.removeItem("macrow_token");
+      setAuth({ loading: false, user: null });
+    };
+    window.addEventListener("macrow:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("macrow:unauthorized", handleUnauthorized);
+  }, []);
   const onAuth = (result) => {
     csrf = result.csrf || "";
+    if (result.token) {
+      authToken = result.token;
+      localStorage.setItem("macrow_token", result.token);
+    }
     setAuth({ loading: false, user: result.user });
     setPage("Overview");
   };
@@ -478,6 +536,8 @@ function App() {
           await api("/api/logout", { method: "POST", body: "{}" });
         } finally {
           csrf = "";
+          authToken = "";
+          localStorage.removeItem("macrow_token");
           setAuth({ loading: false, user: null });
         }
       }}
@@ -507,7 +567,7 @@ function Workspace({
 }) {
   const navigation =
     ROLE_NAV[user.role] || (user.role === "admin" ? ADMIN_NAV : EMP_NAV);
-  const navGroups = groupedNavigation(navigation, user.role === "employee" ? "employee" : "admin");
+  const navGroups = groupedNavigation(navigation, user.role);
   const [notifications, setNotifications] = useState({ items: [], unread: 0 });
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const refreshNotifications = useCallback(async () => {
@@ -570,6 +630,7 @@ function Workspace({
     setNotificationsOpen(false);
     if (!item.read_at) await markNotificationRead(item.id);
   };
+  const portalTitle = user.role === "super_admin" ? "Platform Admin" : (user.company_name || "Macrow Digital");
   return (
     <>
       <div className="shell">
@@ -577,7 +638,7 @@ function Workspace({
           <div className="brand">
             <img src="/assets/macrow-digital-logo.png" alt="Macrow Digital" />
           </div>
-          <div className="brand-sub">People · {user.role}</div>
+          <div className="brand-sub">{user.role === "super_admin" ? "Super Admin Portal" : `${portalTitle} · ${user.role.replaceAll("_", " ")}`}</div>
           <nav className="nav" aria-label="Main navigation">
             {navGroups.map(([section, items]) => (
               <div className="nav-section" key={section}>
@@ -607,7 +668,7 @@ function Workspace({
         <main className="main">
           <header className="topbar">
             <div className="crumb">
-              Macrow Digital / <b>{page}</b>
+              {portalTitle} / <b>{page}</b>
             </div>
             <div className="top-actions">
               <div className="notification-wrap">
@@ -633,7 +694,7 @@ function Workspace({
                   {navigation.map(([label]) => <option value={label} key={label}>{label}</option>)}
                 </select>
               </label>
-              <Pill tone={user.role === "admin" ? "blue" : "green"}>
+              <Pill tone={user.role === "super_admin" ? "purple" : user.role === "admin" ? "blue" : "green"}>
                 {user.role.replaceAll("_", " ")} workspace
               </Pill>
             </div>
@@ -770,8 +831,10 @@ async function loadPage(user, page) {
     case "Documents":
     case "Documents & policies":
       return api("/api/documents");
+    case "Companies":
+      return api("/api/super/companies");
     case "Audit log":
-      return Promise.all([api("/api/audit"),api("/api/hrm/employees")]).then(([audit,people])=>({...audit,employees:people.employees||[]}));
+      return Promise.all([api("/api/audit"), user.role === "super_admin" ? Promise.resolve({ employees: [] }) : api("/api/hrm/employees")]).then(([audit, people]) => ({ ...audit, employees: people.employees || [] }));
     case "Settings":
       return {};
     case "My profile":
@@ -781,9 +844,9 @@ async function loadPage(user, page) {
     default:
       if (page.startsWith("Employee profile · ")) {
         const id = page.slice("Employee profile · ".length);
-        const bankCalls=["admin","payroll_manager"].includes(role)?Promise.all([api(`/api/hrm/bank?user_id=${encodeURIComponent(id)}`),api(`/api/hrm/bank/history?user_id=${encodeURIComponent(id)}`)]):Promise.resolve([{bank:null},{history:[]}]);
+        const bankCalls = ["admin", "payroll_manager"].includes(role) ? Promise.all([api(`/api/hrm/bank?user_id=${encodeURIComponent(id)}`), api(`/api/hrm/bank/history?user_id=${encodeURIComponent(id)}`)]) : Promise.resolve([{ bank: null }, { history: [] }]);
         return Promise.all([api(`/api/hrm/employees/${encodeURIComponent(id)}/profile`), bankCalls])
-          .then(([profile, [bank, bankHistory]]) => ({ ...profile, bank: bank.bank, bankHistory:bankHistory.history }));
+          .then(([profile, [bank, bankHistory]]) => ({ ...profile, bank: bank.bank, bankHistory: bankHistory.history }));
       }
       return {};
   }
@@ -824,7 +887,14 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
     [employeeUpdateFilters, setEmployeeUpdateFilters] = useState({ from: "", to: "", status: "", project: "" }),
     [timelineMode, setTimelineMode] = useState("custom"),
     [payrollTab, setPayrollTab] = useState("workflow"),
-    [attendanceDraft, setAttendanceDraft] = useState(() => ({ user_id:"", work_date:today(), admin_status:"present", clock_in:"10:00", clock_out:"19:00", admin_note:"" }));
+    [attendanceDraft, setAttendanceDraft] = useState(() => ({ user_id: "", work_date: today(), admin_status: "present", clock_in: "10:00", clock_out: "19:00", admin_note: "" })),
+    [companyModalOpen, setCompanyModalOpen] = useState(false),
+    [companyDraft, setCompanyDraft] = useState({ name: "", slug: "", code: "", domain: "", contact_email: "", phone: "", address: "", admin_name: "", admin_email: "", admin_password: "" }),
+    [adminInviteModalOpen, setAdminInviteModalOpen] = useState(false),
+    [adminInviteTarget, setAdminInviteTarget] = useState(null),
+    [adminInviteDraft, setAdminInviteDraft] = useState({ name: "", email: "", title: "Company Administrator", department: "Management", password: "" }),
+    [companyFilterQuery, setCompanyFilterQuery] = useState(""),
+    [companyStatusFilter, setCompanyStatusFilter] = useState("All");
   const reload = useCallback(async () => {
     setLoadError("");
     try {
@@ -1177,7 +1247,23 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
       <section className="panel">
         <h2>Unable to load this page</h2>
         <p>{loadError}</p>
-        <Button onClick={reload}>Retry</Button>
+        <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+          <Button onClick={reload}>Retry</Button>
+          {String(loadError).includes("401") || String(loadError).toLowerCase().includes("sign in") ? (
+            <Button
+              primary
+              onClick={async () => {
+                try {
+                  await api("/api/logout", { method: "POST", body: "{}" });
+                } catch { }
+                csrf = "";
+                window.location.reload();
+              }}
+            >
+              Sign out & Sign in again
+            </Button>
+          ) : null}
+        </div>
       </section>
     );
   const commonFormError = formError && (
@@ -1188,8 +1274,8 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
   const invitationRows = data.invitations || [];
   const employeesList = Array.isArray(data.employees) ? data.employees : [];
   const matchesEmployeeSearch = (item) => `${item.name} ${item.email} ${item.department} ${item.title}`.toLowerCase().includes(employeeQuery.trim().toLowerCase());
-  const visibleEmployees = employeesList.filter(x=>matchesEmployeeSearch(x)&&(directoryDepartment==="All departments"||x.department===directoryDepartment)&&(directoryTitle==="All designations"||x.title===directoryTitle)&&(directoryManager==="All managers"||x.manager_id===directoryManager)&&(directoryAccess==="All access"||(directoryAccess==="Active"?x.active:!x.active))).sort((a,b)=>directorySort==="joining_date"?String(a.start_date||"").localeCompare(String(b.start_date||"")):directorySort==="activity"?String(b.last_activity||"").localeCompare(String(a.last_activity||"")):a.name.localeCompare(b.name));
-  const employeePageSize=10, pagedEmployees=visibleEmployees.slice((directoryPage-1)*employeePageSize,directoryPage*employeePageSize);
+  const visibleEmployees = employeesList.filter(x => matchesEmployeeSearch(x) && (directoryDepartment === "All departments" || x.department === directoryDepartment) && (directoryTitle === "All designations" || x.title === directoryTitle) && (directoryManager === "All managers" || x.manager_id === directoryManager) && (directoryAccess === "All access" || (directoryAccess === "Active" ? x.active : !x.active))).sort((a, b) => directorySort === "joining_date" ? String(a.start_date || "").localeCompare(String(b.start_date || "")) : directorySort === "activity" ? String(b.last_activity || "").localeCompare(String(a.last_activity || "")) : a.name.localeCompare(b.name));
+  const employeePageSize = 10, pagedEmployees = visibleEmployees.slice((directoryPage - 1) * employeePageSize, directoryPage * employeePageSize);
   const visibleInvitations = invitationRows.filter((item) => matchesEmployeeSearch(item) && (employeeStatus === "All statuses" || item.status === employeeStatus));
   function confirmResend(item) {
     setModal({
@@ -1214,11 +1300,13 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
     });
   }
   function confirmRevoke(item) {
-    setModal({ type: "confirm", title: "Revoke invitation?", description: `Revoke the pending invitation for ${item.name} (${item.email})? Any activation link already shared will stop working.`, confirmLabel: "Revoke invitation", submit: async (event) => {
-      event.preventDefault(); setModal((current) => ({ ...current, busy: true }));
-      try { await api(`/api/hrm/invitations/${item.id}/revoke`, { method: "POST", body: "{}" }); setModal(null); toast("Invitation revoked; its activation link is invalid."); await reload(); }
-      catch (error) { setModal((current) => ({ ...current, busy: false, error: error.message })); }
-    }});
+    setModal({
+      type: "confirm", title: "Revoke invitation?", description: `Revoke the pending invitation for ${item.name} (${item.email})? Any activation link already shared will stop working.`, confirmLabel: "Revoke invitation", submit: async (event) => {
+        event.preventDefault(); setModal((current) => ({ ...current, busy: true }));
+        try { await api(`/api/hrm/invitations/${item.id}/revoke`, { method: "POST", body: "{}" }); setModal(null); toast("Invitation revoked; its activation link is invalid."); await reload(); }
+        catch (error) { setModal((current) => ({ ...current, busy: false, error: error.message })); }
+      }
+    });
   }
   function confirmDocumentAction(doc, operation) {
     const publishing = operation === "publish";
@@ -1243,6 +1331,54 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
       },
     });
   }
+  if (page === "Overview" && user.role === "super_admin")
+    return (
+      <>
+        <Header
+          tag="PLATFORM ADMINISTRATION"
+          title={`${workdayGreeting()}, ${user.name.split(" ")[0]}`}
+          description="Manage client organizations, provision company administrator accounts, and monitor platform health."
+        ><span className="date-chip"><span aria-hidden="true">🏢</span>{workdayDate()}</span></Header>
+        <div className="cards">
+          <DashboardAction label="Total companies" value={data.totalCompanies || 0} detail="Registered organizations" icon="🏢" onClick={() => setPage("Companies")} />
+          <DashboardAction label="Active companies" value={data.activeCompanies || 0} detail="Operational workspaces" icon="✓" onClick={() => setPage("Companies")} />
+          <DashboardAction label="Company admins" value={data.totalAdmins || 0} detail="Active company administrators" icon="♙" onClick={() => setPage("Companies")} />
+          <DashboardAction label="Platform employees" value={data.totalEmployees || 0} detail="Total company employees" icon="👥" onClick={() => setPage("Companies")} />
+        </div>
+        <div className="grid-two dashboard-lower">
+          <Panel title="Recent companies" aside={<Button onClick={() => setPage("Companies")}>Manage all companies</Button>}>
+            <div className="table-responsive">
+              <DataTable columns={["Company", "Code", "Domain", "Admins", "Employees", "Status"]} empty="No companies registered yet.">
+                {(data.recentCompanies || []).map((c) => (
+                  <tr key={c.id}>
+                    <td><b>{c.name}</b><br /><small className="muted">{c.slug}</small></td>
+                    <td><code>{c.code || "—"}</code></td>
+                    <td>{c.domain ? <span className="muted">{c.domain}</span> : "—"}</td>
+                    <td><Pill tone="blue">{c.admin_count} Admin</Pill></td>
+                    <td>{c.employee_count}</td>
+                    <td><Pill tone={c.active ? "green" : "red"}>{c.active ? "Active" : "Disabled"}</Pill></td>
+                  </tr>
+                ))}
+              </DataTable>
+            </div>
+          </Panel>
+          <Panel title="Platform activity" aside={<span className="muted">Recent security and administrative actions</span>}>
+            <div className="event-list">
+              {(data.latest || []).map((x, i) => (
+                <div className="event" key={i}>
+                  <div className="event-mark">✳</div>
+                  <div>
+                    <b>{x.action}</b>
+                    <small>{x.name || "System"} · {showTime(x.created_at)}{x.details ? ` · ${x.details}` : ""}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!(data.latest || []).length && <Empty>No recent activity recorded.</Empty>}
+          </Panel>
+        </div>
+      </>
+    );
   if (page === "Overview" && user.role === "admin")
     return (
       <>
@@ -1252,18 +1388,18 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           description="Here’s your people pulse for today. Start with what needs your attention."
         ><span className="date-chip"><span aria-hidden="true">✳</span>{workdayDate()}</span></Header>
         <div className="cards">
-          <DashboardAction label="Employees" value={data.employees} detail="Active team members" icon="♙" onClick={()=>setPage("Employees")} />
-          <DashboardAction label="Clocked in today" value={data.clockedIn} detail="Current shift" icon="◷" onClick={()=>setPage("Attendance")} />
-          <DashboardAction label="Pending approvals" value={data.pending} detail="Requests to review" icon="⇧" onClick={()=>setPage("Requests")} />
-          <DashboardAction label="Payroll drafts" value={data.payroll} detail="Awaiting review" icon="₹" onClick={()=>setPage("Payroll")} />
+          <DashboardAction label="Employees" value={data.employees} detail="Active team members" icon="♙" onClick={() => setPage("Employees")} />
+          <DashboardAction label="Clocked in today" value={data.clockedIn} detail="Current shift" icon="◷" onClick={() => setPage("Attendance")} />
+          <DashboardAction label="Pending approvals" value={data.pending} detail="Requests to review" icon="⇧" onClick={() => setPage("Requests")} />
+          <DashboardAction label="Payroll drafts" value={data.payroll} detail="Awaiting review" icon="₹" onClick={() => setPage("Payroll")} />
         </div>
         <div className="grid-two dashboard-lower">
           <Panel title="Your shortcuts" aside={<span className="muted">Jump back into the work that matters</span>}>
             <div className="shortcut-grid">
-              <button type="button" className="shortcut-card" onClick={()=>setPage("Employees")}><span className="shortcut-icon people">♙</span><span><b>People & onboarding</b><small>Invite someone or review their profile</small></span><i>→</i></button>
-              <button type="button" className="shortcut-card" onClick={()=>setPage("Requests")}><span className="shortcut-icon approvals">✓</span><span><b>Approval inbox</b><small>{data.pending ? `${data.pending} request${data.pending===1?"":"s"} waiting for you` : "Your requests are all caught up"}</small></span><i>→</i></button>
-              <button type="button" className="shortcut-card" onClick={()=>setPage("Attendance")}><span className="shortcut-icon time">◷</span><span><b>Team attendance</b><small>See how the day is going</small></span><i>→</i></button>
-              <button type="button" className="shortcut-card" onClick={()=>setPage("Payroll")}><span className="shortcut-icon payroll">₹</span><span><b>Payroll workspace</b><small>Review current payroll drafts</small></span><i>→</i></button>
+              <button type="button" className="shortcut-card" onClick={() => setPage("Employees")}><span className="shortcut-icon people">♙</span><span><b>People & onboarding</b><small>Invite someone or review their profile</small></span><i>→</i></button>
+              <button type="button" className="shortcut-card" onClick={() => setPage("Requests")}><span className="shortcut-icon approvals">✓</span><span><b>Approval inbox</b><small>{data.pending ? `${data.pending} request${data.pending === 1 ? "" : "s"} waiting for you` : "Your requests are all caught up"}</small></span><i>→</i></button>
+              <button type="button" className="shortcut-card" onClick={() => setPage("Attendance")}><span className="shortcut-icon time">◷</span><span><b>Team attendance</b><small>See how the day is going</small></span><i>→</i></button>
+              <button type="button" className="shortcut-card" onClick={() => setPage("Payroll")}><span className="shortcut-icon payroll">₹</span><span><b>Payroll workspace</b><small>Review current payroll drafts</small></span><i>→</i></button>
             </div>
           </Panel>
           <Panel title="A little activity" aside={<span className="muted">Recent workspace updates</span>}>
@@ -1278,20 +1414,20 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
   if (page === "Overview" && user.role === "hr_manager")
     return <>
       <Header tag="PEOPLE OPERATIONS" title={`${workdayGreeting()}, ${user.name.split(" ")[0]}`} description="Your team care checklist for today. Thanks for keeping everything moving."><span className="date-chip">{workdayDate()}</span></Header>
-      <div className="cards"><DashboardAction label="Active employees" value={data.employees||0} detail="Open the employee directory" icon="♙" onClick={()=>setPage("Employees")} /><DashboardAction label="Invitations to follow up" value={data.pendingInvitations||0} detail="Keep onboarding on track" icon="✉" onClick={()=>setPage("Employees")} /><DashboardAction label="Requests to review" value={data.pendingRequests||0} detail="Open your approval inbox" icon="✓" onClick={()=>setPage("Requests")} /><DashboardAction label="Here today" value={data.clockedIn||0} detail="Team members clocked in" icon="◷" onClick={()=>setPage("Attendance")} /></div>
-      <Panel title="Your next steps" aside={<span className="muted">A few handy places to start</span>}><div className="quick-actions"><Button onClick={()=>setPage("Employees")}>Welcome a teammate</Button><Button onClick={()=>setPage("Attendance")}>See today’s attendance</Button><Button onClick={()=>setPage("Requests")}>Review requests</Button><Button onClick={()=>setPage("Work updates")}>Read team updates</Button></div></Panel>
+      <div className="cards"><DashboardAction label="Active employees" value={data.employees || 0} detail="Open the employee directory" icon="♙" onClick={() => setPage("Employees")} /><DashboardAction label="Invitations to follow up" value={data.pendingInvitations || 0} detail="Keep onboarding on track" icon="✉" onClick={() => setPage("Employees")} /><DashboardAction label="Requests to review" value={data.pendingRequests || 0} detail="Open your approval inbox" icon="✓" onClick={() => setPage("Requests")} /><DashboardAction label="Here today" value={data.clockedIn || 0} detail="Team members clocked in" icon="◷" onClick={() => setPage("Attendance")} /></div>
+      <Panel title="Your next steps" aside={<span className="muted">A few handy places to start</span>}><div className="quick-actions"><Button onClick={() => setPage("Employees")}>Welcome a teammate</Button><Button onClick={() => setPage("Attendance")}>See today’s attendance</Button><Button onClick={() => setPage("Requests")}>Review requests</Button><Button onClick={() => setPage("Work updates")}>Read team updates</Button></div></Panel>
     </>;
   if (page === "Overview" && user.role === "payroll_manager")
     return <>
       <Header tag="PAYROLL & FINANCE" title={`${workdayGreeting()}, ${user.name.split(" ")[0]}`} description="A clear look at payroll readiness, bank checks, and what’s next."><span className="date-chip">{workdayDate()}</span></Header>
-      <div className="cards"><DashboardAction label="Periods to review" value={(data.payrollByStatus||[]).filter(x=>["Draft","Validation","HR Review","Payroll Approval"].includes(x.status)).reduce((n,x)=>n+Number(x.count),0)} detail="Open the payroll workflow" icon="₹" onClick={()=>setPage("Payroll")} /><DashboardAction label="Bank checks" value={data.bankPending||0} detail="Pending or needs a correction" icon="▣" onClick={()=>setPage("Bank reviews")} /><DashboardAction label="Latest pay period" value={data.latestPeriod?.period||"—"} detail={data.latestPeriod?.status||"No period started yet"} icon="◷" onClick={()=>setPage("Payroll")} /><DashboardAction label="Reports" value="View" detail="Payroll and reconciliation" icon="▥" onClick={()=>setPage("Reports")} /></div>
-      <Panel title="Payroll journey" aside={<span className="muted">See each period at a glance</span>}><DataTable columns={["Workflow status","Periods"]} empty="No payroll periods yet. You’re all caught up.">{(data.payrollByStatus||[]).map(x=><tr key={x.status}><td><Pill>{x.status}</Pill></td><td>{x.count}</td></tr>)}</DataTable></Panel>
+      <div className="cards"><DashboardAction label="Periods to review" value={(data.payrollByStatus || []).filter(x => ["Draft", "Validation", "HR Review", "Payroll Approval"].includes(x.status)).reduce((n, x) => n + Number(x.count), 0)} detail="Open the payroll workflow" icon="₹" onClick={() => setPage("Payroll")} /><DashboardAction label="Bank checks" value={data.bankPending || 0} detail="Pending or needs a correction" icon="▣" onClick={() => setPage("Bank reviews")} /><DashboardAction label="Latest pay period" value={data.latestPeriod?.period || "—"} detail={data.latestPeriod?.status || "No period started yet"} icon="◷" onClick={() => setPage("Payroll")} /><DashboardAction label="Reports" value="View" detail="Payroll and reconciliation" icon="▥" onClick={() => setPage("Reports")} /></div>
+      <Panel title="Payroll journey" aside={<span className="muted">See each period at a glance</span>}><DataTable columns={["Workflow status", "Periods"]} empty="No payroll periods yet. You’re all caught up.">{(data.payrollByStatus || []).map(x => <tr key={x.status}><td><Pill>{x.status}</Pill></td><td>{x.count}</td></tr>)}</DataTable></Panel>
     </>;
   if (page === "Overview" && user.role === "manager")
     return <>
       <Header tag="YOUR TEAM" title={`${workdayGreeting()}, ${user.name.split(" ")[0]}`} description="Your team’s day, in one place. Here’s where a little support can make a difference."><span className="date-chip">{workdayDate()}</span></Header>
-      <div className="cards"><DashboardAction label="Team members" value={data.team||0} detail="People in your department" icon="♙" onClick={()=>setPage("Work updates")} /><DashboardAction label="On the clock" value={data.clockedIn||0} detail="Team members clocked in" icon="◷" onClick={()=>setPage("Attendance")} /><DashboardAction label="Tasks to catch up on" value={data.overdueTasks||0} detail="Open tasks past their due date" icon="✓" onClick={()=>setPage("Tasks")} /><DashboardAction label="Needs a hand" value={data.blockedUpdates||0} detail="Team updates with a blocker" icon="!" onClick={()=>setPage("Work updates")} /></div>
-      <Panel title="Your team shortcuts"><div className="quick-actions"><Button onClick={()=>setPage("Work updates")}>Read team updates</Button><Button onClick={()=>setPage("Attendance")}>See attendance</Button><Button onClick={()=>setPage("Tasks")}>Review tasks</Button><Button onClick={()=>setPage("Requests")}>Requests to review ({data.pendingRequests||0})</Button></div></Panel>
+      <div className="cards"><DashboardAction label="Team members" value={data.team || 0} detail="People in your department" icon="♙" onClick={() => setPage("Work updates")} /><DashboardAction label="On the clock" value={data.clockedIn || 0} detail="Team members clocked in" icon="◷" onClick={() => setPage("Attendance")} /><DashboardAction label="Tasks to catch up on" value={data.overdueTasks || 0} detail="Open tasks past their due date" icon="✓" onClick={() => setPage("Tasks")} /><DashboardAction label="Needs a hand" value={data.blockedUpdates || 0} detail="Team updates with a blocker" icon="!" onClick={() => setPage("Work updates")} /></div>
+      <Panel title="Your team shortcuts"><div className="quick-actions"><Button onClick={() => setPage("Work updates")}>Read team updates</Button><Button onClick={() => setPage("Attendance")}>See attendance</Button><Button onClick={() => setPage("Tasks")}>Review tasks</Button><Button onClick={() => setPage("Requests")}>Requests to review ({data.pendingRequests || 0})</Button></div></Panel>
     </>;
   if (page === "Overview")
     return (
@@ -1305,7 +1441,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
       />
     );
   if (page === "My daily updates") {
-    const rows = (data.updates || []).filter(x=>(!employeeUpdateFilters.from||x.work_date>=employeeUpdateFilters.from)&&(!employeeUpdateFilters.to||x.work_date<=employeeUpdateFilters.to)&&(!employeeUpdateFilters.status||x.status===employeeUpdateFilters.status)&&(!employeeUpdateFilters.project||x.project===employeeUpdateFilters.project));
+    const rows = (data.updates || []).filter(x => (!employeeUpdateFilters.from || x.work_date >= employeeUpdateFilters.from) && (!employeeUpdateFilters.to || x.work_date <= employeeUpdateFilters.to) && (!employeeUpdateFilters.status || x.status === employeeUpdateFilters.status) && (!employeeUpdateFilters.project || x.project === employeeUpdateFilters.project));
     const edit = (row) => { setEditingUpdate(row); document.getElementById("daily-update-form")?.scrollIntoView({ behavior: "smooth", block: "center" }); };
     return <>
       <Header tag="MY WORK" title="My daily updates" description="Record what you worked on, progress, blockers, and what comes next." />
@@ -1322,8 +1458,8 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           <SelectField name="task_id" label="Linked assigned task" required={false} defaultValue={editingUpdate?.task_id || ""} options={[["", "No linked task"], ...(data.tasks || []).map(t => [t.id, t.title])]} />
           <Field name="project" label="Project" required={false} defaultValue={editingUpdate?.project || ""} />
           <Field name="client" label="Client" required={false} defaultValue={editingUpdate?.client || ""} />
-          <SelectField name="priority" label="Priority" defaultValue={editingUpdate?.priority || "Medium"} options={["Low", "Medium", "High", "Urgent"].map(x => [x,x])} />
-          <SelectField name="status" label="Task status" defaultValue={editingUpdate?.status || "In Progress"} options={["Not Started", "In Progress", "Blocked", "Completed"].map(x => [x,x])} />
+          <SelectField name="priority" label="Priority" defaultValue={editingUpdate?.priority || "Medium"} options={["Low", "Medium", "High", "Urgent"].map(x => [x, x])} />
+          <SelectField name="status" label="Task status" defaultValue={editingUpdate?.status || "In Progress"} options={["Not Started", "In Progress", "Blocked", "Completed"].map(x => [x, x])} />
           <Field name="progress" label="Progress (%)" type="number" min="0" max="100" defaultValue={editingUpdate?.progress ?? 0} />
           <Field name="time_spent" label="Time spent (hours)" type="number" min="0" max="24" step="0.25" required={false} defaultValue={editingUpdate?.time_spent ?? ""} />
           <div className="field full"><label htmlFor="daily-description">Detailed description</label><textarea id="daily-description" name="description" required defaultValue={editingUpdate?.description || ""} /></div>
@@ -1335,50 +1471,50 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
         </form>
       </Panel>
       <Panel title="Work history" aside={<span className="muted">Newest updates first · absence is not inferred from missing entries</span>}>
-        <div className="toolbar employee-toolbar"><input aria-label="Updates from date" type="date" value={employeeUpdateFilters.from} onChange={e=>setEmployeeUpdateFilters({...employeeUpdateFilters,from:e.target.value})}/><input aria-label="Updates to date" type="date" value={employeeUpdateFilters.to} onChange={e=>setEmployeeUpdateFilters({...employeeUpdateFilters,to:e.target.value})}/><select aria-label="Filter update status" value={employeeUpdateFilters.status} onChange={e=>setEmployeeUpdateFilters({...employeeUpdateFilters,status:e.target.value})}><option value="">All statuses</option>{["Not Started","In Progress","Blocked","Completed"].map(x=><option key={x}>{x}</option>)}</select><select aria-label="Filter update project" value={employeeUpdateFilters.project} onChange={e=>setEmployeeUpdateFilters({...employeeUpdateFilters,project:e.target.value})}><option value="">All projects</option>{[...new Set((data.updates||[]).map(x=>x.project).filter(Boolean))].sort().map(x=><option key={x}>{x}</option>)}</select></div>
-        {rows.length ? <div className="event-list">{rows.map(x => <article className="event" key={x.id}><div className="event-mark">{x.status === "Completed" ? "✓" : x.status === "Blocked" ? "!" : "≋"}</div><div><b>{x.work_date} · {x.title}</b><small>{x.project || "No project"}{x.client ? ` · ${x.client}` : ""} · {x.priority} · {x.status} · {x.progress}%</small><p>{x.description}</p>{x.completed_today && <small><b>Completed:</b> {x.completed_today}</small>}{x.blockers && <small><b>Blockers:</b> {x.blockers}</small>}{(x.comments||[]).map(c=><small key={c.id}><b>Feedback · {c.author_name}:</b> {c.body}</small>)}<small>Submitted {showTime(x.created_at)} · Last edited {showTime(x.updated_at)}</small><Button onClick={() => edit(x)}>Edit update</Button></div></article>)}</div> : <Empty>No daily updates yet. Submit your first update above.</Empty>}
+        <div className="toolbar employee-toolbar"><input aria-label="Updates from date" type="date" value={employeeUpdateFilters.from} onChange={e => setEmployeeUpdateFilters({ ...employeeUpdateFilters, from: e.target.value })} /><input aria-label="Updates to date" type="date" value={employeeUpdateFilters.to} onChange={e => setEmployeeUpdateFilters({ ...employeeUpdateFilters, to: e.target.value })} /><select aria-label="Filter update status" value={employeeUpdateFilters.status} onChange={e => setEmployeeUpdateFilters({ ...employeeUpdateFilters, status: e.target.value })}><option value="">All statuses</option>{["Not Started", "In Progress", "Blocked", "Completed"].map(x => <option key={x}>{x}</option>)}</select><select aria-label="Filter update project" value={employeeUpdateFilters.project} onChange={e => setEmployeeUpdateFilters({ ...employeeUpdateFilters, project: e.target.value })}><option value="">All projects</option>{[...new Set((data.updates || []).map(x => x.project).filter(Boolean))].sort().map(x => <option key={x}>{x}</option>)}</select></div>
+        {rows.length ? <div className="event-list">{rows.map(x => <article className="event" key={x.id}><div className="event-mark">{x.status === "Completed" ? "✓" : x.status === "Blocked" ? "!" : "≋"}</div><div><b>{x.work_date} · {x.title}</b><small>{x.project || "No project"}{x.client ? ` · ${x.client}` : ""} · {x.priority} · {x.status} · {x.progress}%</small><p>{x.description}</p>{x.completed_today && <small><b>Completed:</b> {x.completed_today}</small>}{x.blockers && <small><b>Blockers:</b> {x.blockers}</small>}{(x.comments || []).map(c => <small key={c.id}><b>Feedback · {c.author_name}:</b> {c.body}</small>)}<small>Submitted {showTime(x.created_at)} · Last edited {showTime(x.updated_at)}</small><Button onClick={() => edit(x)}>Edit update</Button></div></article>)}</div> : <Empty>No daily updates yet. Submit your first update above.</Empty>}
       </Panel>
     </>;
   }
   if (page === "Bank reviews") {
-    const rows=data.banks||[];
-    return <><Header tag="PAYROLL PRIVACY" title="Bank detail verification" description="Review masked employee bank records. Reveal a full account number only when required."/><div className="cards"><Stat label="Pending verification" value={rows.filter(x=>x.status==="Pending Verification").length} detail="Needs payroll review" icon="◷"/><Stat label="Changes requested" value={rows.filter(x=>x.status==="Changes Requested").length} detail="Waiting on employee" icon="!"/><Stat label="Verified" value={rows.filter(x=>x.status==="Verified").length} detail="Approved details" icon="✓"/></div><Panel title="Employee bank records"><DataTable columns={["Employee","Department","Designation","Submitted","Status","Review"]} empty="No bank detail submissions.">{rows.map(x=><tr key={x.user_id}><td><b>{x.name}</b><br/><span className="muted">{x.employee_code||x.email}</span></td><td>{x.department||"—"}</td><td>{x.title||"—"}</td><td>{x.submitted_at?showTime(x.submitted_at):"—"}</td><td><Pill tone={x.status==="Verified"?"green":x.status==="Changes Requested"?"red":"amber"}>{x.status}</Pill></td><td><Button onClick={()=>setPage(`Employee profile · ${x.user_id}`)}>Open secure profile</Button></td></tr>)}</DataTable></Panel></>;
+    const rows = data.banks || [];
+    return <><Header tag="PAYROLL PRIVACY" title="Bank detail verification" description="Review masked employee bank records. Reveal a full account number only when required." /><div className="cards"><Stat label="Pending verification" value={rows.filter(x => x.status === "Pending Verification").length} detail="Needs payroll review" icon="◷" /><Stat label="Changes requested" value={rows.filter(x => x.status === "Changes Requested").length} detail="Waiting on employee" icon="!" /><Stat label="Verified" value={rows.filter(x => x.status === "Verified").length} detail="Approved details" icon="✓" /></div><Panel title="Employee bank records"><DataTable columns={["Employee", "Department", "Designation", "Submitted", "Status", "Review"]} empty="No bank detail submissions.">{rows.map(x => <tr key={x.user_id}><td><b>{x.name}</b><br /><span className="muted">{x.employee_code || x.email}</span></td><td>{x.department || "—"}</td><td>{x.title || "—"}</td><td>{x.submitted_at ? showTime(x.submitted_at) : "—"}</td><td><Pill tone={x.status === "Verified" ? "green" : x.status === "Changes Requested" ? "red" : "amber"}>{x.status}</Pill></td><td><Button onClick={() => setPage(`Employee profile · ${x.user_id}`)}>Open secure profile</Button></td></tr>)}</DataTable></Panel></>;
   }
   if (page === "Work updates") {
-    const rows=(data.updates||[]).filter(x=>(!updateFilters.user_id||x.user_id===updateFilters.user_id)&&(!updateFilters.from||x.work_date>=updateFilters.from)&&(!updateFilters.to||x.work_date<=updateFilters.to)&&(!updateFilters.status||x.status===updateFilters.status));
-    const selectedDay=updateFilters.from&&updateFilters.from===updateFilters.to?updateFilters.from:(!updateFilters.from&&!updateFilters.to?today():"");
-    const missingOnDay=selectedDay?employeesList.filter(e=>(!updateFilters.user_id||e.id===updateFilters.user_id)&&!(data.updates||[]).some(u=>u.user_id===e.id&&u.work_date===selectedDay)):[];
+    const rows = (data.updates || []).filter(x => (!updateFilters.user_id || x.user_id === updateFilters.user_id) && (!updateFilters.from || x.work_date >= updateFilters.from) && (!updateFilters.to || x.work_date <= updateFilters.to) && (!updateFilters.status || x.status === updateFilters.status));
+    const selectedDay = updateFilters.from && updateFilters.from === updateFilters.to ? updateFilters.from : (!updateFilters.from && !updateFilters.to ? today() : "");
+    const missingOnDay = selectedDay ? employeesList.filter(e => (!updateFilters.user_id || e.id === updateFilters.user_id) && !(data.updates || []).some(u => u.user_id === e.id && u.work_date === selectedDay)) : [];
     return <>
       <Header tag="WORKFORCE" title="Daily work updates" description="Review employee-reported work by date, status, and person. Missing updates do not indicate absence." />
-      <div className="toolbar employee-toolbar"><select aria-label="Timeline period" value={timelineMode} onChange={e=>{const mode=e.target.value;setTimelineMode(mode);const d=new Date(),date=(x)=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(x);if(mode==="daily"){const t=date(d);setUpdateFilters({...updateFilters,from:t,to:t})}else if(mode==="weekly"){const start=new Date(d);start.setDate(d.getDate()-((d.getDay()+6)%7));const end=new Date(start);end.setDate(start.getDate()+6);setUpdateFilters({...updateFilters,from:date(start),to:date(end)})}else if(mode==="monthly"){const start=new Date(d.getFullYear(),d.getMonth(),1),end=new Date(d.getFullYear(),d.getMonth()+1,0);setUpdateFilters({...updateFilters,from:date(start),to:date(end)})}else setUpdateFilters({...updateFilters,from:"",to:""})}}><option value="custom">Custom range</option><option value="daily">Today</option><option value="weekly">This week</option><option value="monthly">This month</option></select><select aria-label="Filter by employee" value={updateFilters.user_id} onChange={e=>setUpdateFilters({...updateFilters,user_id:e.target.value})}><option value="">All employees</option>{employeesList.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><input aria-label="From date" type="date" value={updateFilters.from} onChange={e=>{setTimelineMode("custom");setUpdateFilters({...updateFilters,from:e.target.value})}}/><input aria-label="To date" type="date" value={updateFilters.to} onChange={e=>{setTimelineMode("custom");setUpdateFilters({...updateFilters,to:e.target.value})}}/><select aria-label="Filter by status" value={updateFilters.status} onChange={e=>setUpdateFilters({...updateFilters,status:e.target.value})}><option value="">All statuses</option>{["Not Started","In Progress","Blocked","Completed"].map(x=><option key={x}>{x}</option>)}</select></div>
-      <div className="cards"><Stat label="Updates shown" value={rows.length} detail="Filtered work history" icon="≋"/><Stat label="Blocked" value={rows.filter(x=>x.status==="Blocked").length} detail="Reported blockers" icon="!"/><Stat label="Completed" value={rows.filter(x=>x.status==="Completed").length} detail="Reported as complete" icon="✓"/></div>
-      {selectedDay&&<Panel title={`No update recorded · ${selectedDay}`} aside={<span className="muted">This is a reporting status only; it does not establish absence.</span>}>{missingOnDay.length?missingOnDay.map(x=><Pill key={x.id}>{x.name}</Pill>):<Empty>Every employee in scope has submitted an update for this date.</Empty>}</Panel>}
-      <Panel title="Employee activity timeline"><DataTable columns={["Date & employee","Update","Project / task","Status","Progress","Recorded","Actions"]} empty="No work updates match your filters.">{rows.map(x=><tr key={x.id}><td><b>{x.work_date}</b><br/>{x.employee_name}</td><td><b>{x.title}</b><br/><span className="muted">{x.description}</span>{x.blockers&&<div><Pill tone="red">Blocker reported</Pill> {x.blockers}</div>}</td><td>{x.project||"—"}{x.task_title&&<div className="muted">{x.task_title}</div>}</td><td><Pill tone={x.status==="Completed"?"green":x.status==="Blocked"?"red":"blue"}>{x.status}</Pill></td><td>{x.progress}%</td><td>{showTime(x.created_at)}<br/><span className="muted">Edited {showTime(x.updated_at)}</span></td><td><Button onClick={()=>setPage(`Employee profile · ${x.user_id}`)}>View profile</Button></td></tr>)}</DataTable></Panel>
+      <div className="toolbar employee-toolbar"><select aria-label="Timeline period" value={timelineMode} onChange={e => { const mode = e.target.value; setTimelineMode(mode); const d = new Date(), date = (x) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(x); if (mode === "daily") { const t = date(d); setUpdateFilters({ ...updateFilters, from: t, to: t }) } else if (mode === "weekly") { const start = new Date(d); start.setDate(d.getDate() - ((d.getDay() + 6) % 7)); const end = new Date(start); end.setDate(start.getDate() + 6); setUpdateFilters({ ...updateFilters, from: date(start), to: date(end) }) } else if (mode === "monthly") { const start = new Date(d.getFullYear(), d.getMonth(), 1), end = new Date(d.getFullYear(), d.getMonth() + 1, 0); setUpdateFilters({ ...updateFilters, from: date(start), to: date(end) }) } else setUpdateFilters({ ...updateFilters, from: "", to: "" }) }}><option value="custom">Custom range</option><option value="daily">Today</option><option value="weekly">This week</option><option value="monthly">This month</option></select><select aria-label="Filter by employee" value={updateFilters.user_id} onChange={e => setUpdateFilters({ ...updateFilters, user_id: e.target.value })}><option value="">All employees</option>{employeesList.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select><input aria-label="From date" type="date" value={updateFilters.from} onChange={e => { setTimelineMode("custom"); setUpdateFilters({ ...updateFilters, from: e.target.value }) }} /><input aria-label="To date" type="date" value={updateFilters.to} onChange={e => { setTimelineMode("custom"); setUpdateFilters({ ...updateFilters, to: e.target.value }) }} /><select aria-label="Filter by status" value={updateFilters.status} onChange={e => setUpdateFilters({ ...updateFilters, status: e.target.value })}><option value="">All statuses</option>{["Not Started", "In Progress", "Blocked", "Completed"].map(x => <option key={x}>{x}</option>)}</select></div>
+      <div className="cards"><Stat label="Updates shown" value={rows.length} detail="Filtered work history" icon="≋" /><Stat label="Blocked" value={rows.filter(x => x.status === "Blocked").length} detail="Reported blockers" icon="!" /><Stat label="Completed" value={rows.filter(x => x.status === "Completed").length} detail="Reported as complete" icon="✓" /></div>
+      {selectedDay && <Panel title={`No update recorded · ${selectedDay}`} aside={<span className="muted">This is a reporting status only; it does not establish absence.</span>}>{missingOnDay.length ? missingOnDay.map(x => <Pill key={x.id}>{x.name}</Pill>) : <Empty>Every employee in scope has submitted an update for this date.</Empty>}</Panel>}
+      <Panel title="Employee activity timeline"><DataTable columns={["Date & employee", "Update", "Project / task", "Status", "Progress", "Recorded", "Actions"]} empty="No work updates match your filters.">{rows.map(x => <tr key={x.id}><td><b>{x.work_date}</b><br />{x.employee_name}</td><td><b>{x.title}</b><br /><span className="muted">{x.description}</span>{x.blockers && <div><Pill tone="red">Blocker reported</Pill> {x.blockers}</div>}</td><td>{x.project || "—"}{x.task_title && <div className="muted">{x.task_title}</div>}</td><td><Pill tone={x.status === "Completed" ? "green" : x.status === "Blocked" ? "red" : "blue"}>{x.status}</Pill></td><td>{x.progress}%</td><td>{showTime(x.created_at)}<br /><span className="muted">Edited {showTime(x.updated_at)}</span></td><td><Button onClick={() => setPage(`Employee profile · ${x.user_id}`)}>View profile</Button></td></tr>)}</DataTable></Panel>
     </>;
   }
   if (page.startsWith("Employee profile · ")) {
-    const e=data.employee||{}, s=data.stats||{};
-    const profileTabs=[["overview","Profile & bio"],["employment","Employment"],["work","Tasks & updates"],["attendance","Attendance"],["leave","Leave"],...(user.role==="admin"||user.role==="payroll_manager"?[["payroll","Payroll"]]:[]),...(user.role==="admin"||user.role==="payroll_manager"?[["finance","Finance · restricted"]]:[]),["activity","Audit & activity"]];
-    async function reviewBank(status){const note=status==="Changes Requested"?window.prompt("What needs to be corrected?"):"";if(status==="Changes Requested"&&!note)return;try{await api("/api/hrm/bank/review",{method:"POST",body:JSON.stringify({user_id:e.user_id,status,note})});toast(`Bank details ${status.toLowerCase()}.`);await reload()}catch(err){toast(err.message)}}
-    async function reveal(){try{const r=await api("/api/hrm/bank/reveal?user_id="+encodeURIComponent(e.user_id),{method:"POST",body:JSON.stringify({user_id:e.user_id})});setRevealedBank(r.bank)}catch(err){toast(err.message)}}
-    async function commentUpdate(updateId){const body=window.prompt("Feedback for this work update:");if(!body?.trim())return;try{await api(`/api/hrm/daily-updates/${encodeURIComponent(updateId)}/comments`,{method:"POST",body:JSON.stringify({body})});toast("Feedback added to the work history.");await reload()}catch(err){toast(err.message)}}
-    async function addProfileTasks(event){event.preventDefault();const rows=profileTaskRows.filter(x=>x.title.trim());if(!rows.length){toast("Add at least one task title first.");return}let saved=0;try{for(const row of rows){await api("/api/hrm/tasks",{method:"POST",body:JSON.stringify({user_id:e.user_id,title:row.title.trim(),start_date:row.start_date,due_date:row.due_date,description:row.description,priority:"Medium",category:"Daily task"})});saved++}setProfileTaskRows([{title:"",start_date:today(),due_date:"",description:""}]);toast(`${saved} task${saved===1?"":"s"} assigned to ${e.name}.`);await reload()}catch(err){toast(`${saved} task${saved===1?"":"s"} saved before an error: ${err.message}`);if(saved)await reload()}}
+    const e = data.employee || {}, s = data.stats || {};
+    const profileTabs = [["overview", "Profile & bio"], ["employment", "Employment"], ["work", "Tasks & updates"], ["attendance", "Attendance"], ["leave", "Leave"], ...(user.role === "admin" || user.role === "payroll_manager" ? [["payroll", "Payroll"]] : []), ...(user.role === "admin" || user.role === "payroll_manager" ? [["finance", "Finance · restricted"]] : []), ["activity", "Audit & activity"]];
+    async function reviewBank(status) { const note = status === "Changes Requested" ? window.prompt("What needs to be corrected?") : ""; if (status === "Changes Requested" && !note) return; try { await api("/api/hrm/bank/review", { method: "POST", body: JSON.stringify({ user_id: e.user_id, status, note }) }); toast(`Bank details ${status.toLowerCase()}.`); await reload() } catch (err) { toast(err.message) } }
+    async function reveal() { try { const r = await api("/api/hrm/bank/reveal?user_id=" + encodeURIComponent(e.user_id), { method: "POST", body: JSON.stringify({ user_id: e.user_id }) }); setRevealedBank(r.bank) } catch (err) { toast(err.message) } }
+    async function commentUpdate(updateId) { const body = window.prompt("Feedback for this work update:"); if (!body?.trim()) return; try { await api(`/api/hrm/daily-updates/${encodeURIComponent(updateId)}/comments`, { method: "POST", body: JSON.stringify({ body }) }); toast("Feedback added to the work history."); await reload() } catch (err) { toast(err.message) } }
+    async function addProfileTasks(event) { event.preventDefault(); const rows = profileTaskRows.filter(x => x.title.trim()); if (!rows.length) { toast("Add at least one task title first."); return } let saved = 0; try { for (const row of rows) { await api("/api/hrm/tasks", { method: "POST", body: JSON.stringify({ user_id: e.user_id, title: row.title.trim(), start_date: row.start_date, due_date: row.due_date, description: row.description, priority: "Medium", category: "Daily task" }) }); saved++ } setProfileTaskRows([{ title: "", start_date: today(), due_date: "", description: "" }]); toast(`${saved} task${saved === 1 ? "" : "s"} assigned to ${e.name}.`); await reload() } catch (err) { toast(`${saved} task${saved === 1 ? "" : "s"} saved before an error: ${err.message}`); if (saved) await reload() } }
     return <>
-      <Header tag="EMPLOYEE PROFILE" title={e.name||"Employee profile"} description={`${e.employee_code||"Employee ID pending"} · ${e.title||"Employee"} · ${e.department||"Unassigned department"}`}><Button onClick={()=>setPage(user.role==="manager"?"Work updates":user.role==="payroll_manager"?"Bank reviews":"Employees")}>← Back to team</Button></Header>
-      <section className="employee-bio-hero">{e.avatar_data?<img src={e.avatar_data} alt={`${e.name} profile`}/>:<div className="avatar-placeholder">{(e.name||"E").split(/\s+/).map(x=>x[0]).slice(0,2).join("")}</div>}<div><span className="eyebrow">MACROW PEOPLE · EMPLOYEE BIO</span><h2>{e.name}</h2><p>{e.title||"Team member"} · {e.department||"Department to be assigned"} · {e.location||"Hybrid"}</p><blockquote>{e.bio||"A short introduction has not been added yet."}</blockquote>{e.skills?.length>0&&<div className="bio-tags">{e.skills.map(x=><span key={x}>{x}</span>)}</div>}</div></section>
-      <div className="cards">{[["Assigned tasks",s.total_tasks],["Completed",s.completed],["In progress",s.in_progress],["Pending",s.pending],["Overdue",s.overdue],["Blocked",s.blocked],["Active projects",s.active_projects],["Daily updates",s.daily_updates]].map(([label,value])=><Stat key={label} label={label} value={value||0} detail={label==="Daily updates"?"Reported separately from productivity":"From recorded tasks"} icon="·"/>)}</div>
-      <nav className="profile-tabs" role="tablist" aria-label="Employee profile sections">{profileTabs.map(([tab,label])=><button type="button" role="tab" aria-selected={profileTab===tab} className={profileTab===tab?"selected":""} key={tab} onClick={()=>setProfileTab(tab)}>{label}</button>)}</nav>
-      {profileTab==="overview"&&<><Panel title="Personal & professional bio"><div className="profile-grid"><p><b>Official email</b><br/>{e.email}</p><p><b>Phone</b><br/>{e.phone||"—"}</p><p><b>Pronouns</b><br/>{e.pronouns||"—"}</p><p><b>Address</b><br/>{e.address||"—"}</p><p><b>Emergency contact</b><br/>{e.emergency_contact||"—"}</p><p><b>Date of birth</b><br/>{e.date_of_birth||"—"}</p><p><b>Employee ID</b><br/>{e.employee_code||"—"}</p><p><b>Reporting manager</b><br/>{e.manager_name||employeesList.find(x=>x.id===e.manager_id)?.name||"—"}</p><p><b>Joined</b><br/>{e.start_date||"—"}</p><p><b>Location</b><br/>{e.location||"—"}</p><p><b>Interests</b><br/>{e.interests||"—"}</p><p><b>LinkedIn</b><br/>{e.linkedin_url||"—"}</p><p><b>Website</b><br/>{e.website_url||"—"}</p><p><b>Account</b><br/>{e.active?"Active":"Disabled"}</p><p><b>Responsibilities</b><br/>{e.responsibilities||"—"}</p><p><b>Certifications</b><br/>{(e.certifications||[]).join(", ")||"—"}</p><p><b>Profile updated</b><br/>{e.profile_updated_at?showTime(e.profile_updated_at):"—"}</p><p><b>Profile created</b><br/>{showTime(e.created_at)}</p><p><b>Annual CTC</b><br/>{e.annual_ctc_paise?cash(Number(e.annual_ctc_paise)/100):"Not set"}</p></div></Panel><Panel title="Skills & strengths"><div className="bio-tags">{(e.skills||[]).map(x=><span key={x}>{x}</span>)}{!(e.skills||[]).length&&<span>Skills not added yet</span>}</div></Panel></>}
-      {profileTab==="employment"&&(user.role==="admin"||user.role==="hr_manager")&&<Panel title="Edit employee record"><form className="form-grid" onSubmit={async ev=>{ev.preventDefault();try{const d=Object.fromEntries(new FormData(ev.currentTarget));d.skills=String(d.skills||"").split(",").map(x=>x.trim()).filter(Boolean);d.certifications=String(d.certifications||"").split(",").map(x=>x.trim()).filter(Boolean);const photo=ev.currentTarget.elements.avatar_file?.files?.[0];if(photo)d.avatar_data=await resizedImageData(photo);else d.avatar_data=e.avatar_data||"";delete d.avatar_file;if(!d.annual_ctc)delete d.annual_ctc;await api(`/api/hrm/employees/${encodeURIComponent(e.user_id)}/profile`,{method:"PUT",body:JSON.stringify(d)});toast("Employee profile saved and audit recorded.");await reload()}catch(err){toast(err.message)}}}><Field name="employee_code" label="Employee ID" defaultValue={e.employee_code||""}/><Field name="title" label="Designation" defaultValue={e.title||""}/><Field name="department" label="Department" defaultValue={e.department||""}/>{user.role==="admin"&&<><Field name="annual_ctc" label="Annual CTC (INR)" type="number" min="1" step="0.01" required={false} defaultValue={e.annual_ctc_paise?Number(e.annual_ctc_paise)/100:""}/><Field name="ctc_effective_from" label="CTC effective from" type="date" required={false} defaultValue={today()}/></>}<SelectField name="location" label="Work location" defaultValue={e.location||"Hybrid"} options={["Onsite","Remote","Hybrid"].map(x=>[x,x])}/><Field name="start_date" label="Joining date" type="date" defaultValue={e.start_date||""}/><Field name="phone" label="Contact number" type="tel" required={false} defaultValue={e.phone||""}/><Field name="emergency_contact" label="Emergency contact" required={false} defaultValue={e.emergency_contact||""}/><Field name="date_of_birth" label="Date of birth" type="date" required={false} defaultValue={e.date_of_birth||""}/><Field name="address" label="Address" required={false} defaultValue={e.address||""}/><Field name="manager_id" label="Reporting manager user ID" required={false} defaultValue={e.manager_id||""}/><Field name="skills" label="Skills (comma separated)" required={false} defaultValue={(e.skills||[]).join(", ")}/><Field name="pronouns" label="Pronouns" required={false} defaultValue={e.pronouns||""}/><Field name="linkedin_url" label="LinkedIn URL" required={false} defaultValue={e.linkedin_url||""}/><Field name="website_url" label="Website URL" required={false} defaultValue={e.website_url||""}/><Field name="interests" label="Interests" required={false} defaultValue={e.interests||""}/><Field name="certifications" label="Certifications (comma separated)" required={false} defaultValue={(e.certifications||[]).join(", ")}/><div className="field full"><label htmlFor="edit-bio">Employee bio</label><textarea id="edit-bio" name="bio" defaultValue={e.bio||""}/><label htmlFor="profile-avatar-file">Profile image</label><input id="profile-avatar-file" type="file" name="avatar_file" accept="image/png,image/jpeg,image/webp"/><label htmlFor="edit-responsibilities">Responsibilities</label><textarea id="edit-responsibilities" name="responsibilities" defaultValue={e.responsibilities||""}/><Button primary>Save employee record</Button></div></form></Panel>}
-      {profileTab==="work"&&(user.role==="admin"||user.role==="hr_manager")&&<Panel title="Add daily tasks" aside={<span className="muted">Task rows are saved to this employee only.</span>}><form onSubmit={addProfileTasks}><div className="profile-task-table"><div className="profile-task-head"><b>S. No.</b><b>Task</b><b>Start date</b><b>Estimated deadline</b><b>Remarks</b><span/></div>{profileTaskRows.map((row,i)=><div className="profile-task-row" key={i}><b>{i+1}</b><input aria-label={`Task ${i+1}`} placeholder="What needs to be done?" value={row.title} onChange={ev=>setProfileTaskRows(v=>v.map((x,j)=>j===i?{...x,title:ev.target.value}:x))}/><input aria-label={`Start date for task ${i+1}`} type="date" value={row.start_date} onChange={ev=>setProfileTaskRows(v=>v.map((x,j)=>j===i?{...x,start_date:ev.target.value}:x))}/><input aria-label={`Estimated deadline for task ${i+1}`} type="date" value={row.due_date} onChange={ev=>setProfileTaskRows(v=>v.map((x,j)=>j===i?{...x,due_date:ev.target.value}:x))}/><input aria-label={`Remarks for task ${i+1}`} placeholder="Notes or context" value={row.description} onChange={ev=>setProfileTaskRows(v=>v.map((x,j)=>j===i?{...x,description:ev.target.value}:x))}/><button type="button" className="task-row-remove" aria-label={`Remove task row ${i+1}`} disabled={profileTaskRows.length===1} onClick={()=>setProfileTaskRows(v=>v.filter((_,j)=>j!==i))}>×</button></div>)}</div><div className="task-row-actions"><Button type="button" onClick={()=>setProfileTaskRows(v=>[...v,{title:"",start_date:today(),due_date:"",description:""}])}>＋ Add more tasks</Button><Button primary type="submit">Assign tasks</Button></div></form></Panel>}
-      {profileTab==="work"&&<Panel title="Assigned tasks"><DataTable columns={["Task","Project","Priority","Status","Start date","Deadline","Remarks"]} empty="No tasks assigned.">{(data.tasks||[]).map(t=><tr key={t.id}><td>{t.title}</td><td>{t.project||"—"}</td><td>{t.priority}</td><td>{t.status}</td><td>{t.start_date||"—"}</td><td>{t.due_date||"—"}</td><td>{t.description||"—"}</td></tr>)}</DataTable></Panel>}
-      {profileTab==="work"&&<Panel title="Projects and clients"><DataTable columns={["Project","Client","Responsibility","Status","Dates"]} empty="No project assignments recorded.">{(data.projects||[]).map(x=><tr key={x.id}><td>{x.project}</td><td>{x.client||"—"}</td><td>{x.responsibility||"—"}</td><td>{x.status}</td><td>{x.start_date||"—"} {x.end_date||""}</td></tr>)}</DataTable>{user.role==="admin"||user.role==="hr_manager"?<form className="form-grid" onSubmit={async ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(ev.currentTarget));d.user_id=e.user_id;try{await api("/api/hrm/employee-projects",{method:"POST",body:JSON.stringify(d)});toast("Project assignment added.");await reload()}catch(err){toast(err.message)}}}><Field name="project" label="Add project"/><Field name="client" label="Client" required={false}/><Field name="responsibility" label="Responsibility" required={false}/><Field name="start_date" label="Start date" type="date" required={false}/><Button primary>Assign project</Button></form>:null}</Panel>}
-      {profileTab==="work"&&<Panel title="Date-wise updates board" aside={<span className="muted">Latest 14 work dates · newest first</span>}>{(data.updates||[]).length?<div className="update-kanban">{Array.from(new Set((data.updates||[]).map(x=>x.work_date))).sort((a,b)=>b.localeCompare(a)).slice(0,14).map(date=><section className="update-kanban-day" key={date}><header><b>{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}</b><small>{(data.updates||[]).filter(x=>x.work_date===date).length} update(s)</small></header>{(data.updates||[]).filter(x=>x.work_date===date).map(x=><article className="update-kanban-card" key={x.id}><span className={`kanban-status ${String(x.status).toLowerCase().replaceAll(" ","-")}`}>{x.status}</span><b>{x.title}</b><small>{x.project||"No project"} · {x.progress}% · {x.priority}</small><p>{x.description}</p>{x.blockers&&<p className="kanban-blocker">Needs support: {x.blockers}</p>}{(x.comments||[]).map(c=><small key={c.id}><b>{c.author_name}:</b> {c.body}</small>)}{["admin","hr_manager","manager"].includes(user.role)&&<Button onClick={()=>commentUpdate(x.id)}>Add feedback</Button>}</article>)}</section>)}</div>:<Empty>No work updates recorded.</Empty>}</Panel>}
-      {profileTab==="attendance"&&<Panel title="Attendance for this employee"><DataTable columns={["Date","Shift segments","Status"]} empty="No attendance records found for this employee.">{(data.attendance||[]).map(a=><tr key={a.id}><td>{a.work_date}</td><td>{JSON.parse(a.segments||"[]").map(s=><div key={s.start}>{showTime(s.start)} → {s.end?showTime(s.end):"In progress"}</div>)}</td><td><Pill tone={a.status==="in"?"green":"blue"}>{a.status==="in"?"On shift":"Completed / paused"}</Pill></td></tr>)}</DataTable></Panel>}
-      {profileTab==="leave"&&<Panel title="Leave & requests for this employee">{user.role==="admin"&&<form className="form-grid manual-leave-form" onSubmit={async ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(ev.currentTarget));d.user_id=e.user_id;try{await api("/api/hrm/employee-leave",{method:"POST",body:JSON.stringify(d)});ev.currentTarget.reset();toast("Leave entry added to this employee record.");await reload()}catch(err){toast(err.message)}}}><SelectField name="leave_type" label="Leave category" options={(data.leaveCategories||[]).map(x=>[x.name,`${x.name} · ${x.category}`])}/><Field name="start_date" label="From" type="date" defaultValue={today()}/><Field name="end_date" label="To" type="date" defaultValue={today()}/><Field name="days" label="Leave days" type="number" min="0.5" step="0.5" defaultValue="1"/><Field name="details" label="Admin note" required={false} placeholder="Optional note for the employee"/><div className="field"><Button primary>Add leave entry</Button></div></form>}<DataTable columns={["Request","Type","Date range","Calculated days","Status","Decision note"]} empty="No employee requests yet.">{(data.requests||[]).map(r=><tr key={r.id}><td>{r.details}</td><td>{r.leave_type||r.kind}</td><td>{r.start_date||"—"}{r.end_date&&r.end_date!==r.start_date?` – ${r.end_date}`:""}</td><td>{r.kind==="Leave"?Number(r.days||0):"—"}</td><td><Pill tone={r.status==="Approved"?"green":r.status==="Rejected"?"red":"amber"}>{r.status}</Pill></td><td>{r.decision_note||"—"}</td></tr>)}</DataTable><small className="muted">Leave day totals exclude Saturday, Sunday, and Admin-configured company holidays. Holiday dates remain paid-off days.</small></Panel>}
-      {profileTab==="payroll"&&<Panel title="Payroll & payslips for this employee"><DataTable columns={["Period","Days paid","Paid leave","Unpaid leave","Gross","Deductions","Net","Status","Payslip"]} empty="No payroll records for this employee.">{(data.payroll||[]).map(p=><tr key={p.id}><td>{p.period}</td><td>{p.payable_days}</td><td>{p.paid_leave_days}</td><td>{p.unpaid_leave_days}</td><td>{cash(p.gross_paise/100)}</td><td>{cash(p.total_deductions_paise/100)}</td><td><b>{cash(p.net_paise/100)}</b></td><td>{p.period_status}</td><td>{["Published","Paid"].includes(p.period_status)?<Button onClick={()=>downloadPayslip(p.id,toast)}>View / download PDF</Button>:"Not published"}</td></tr>)}</DataTable></Panel>}
-      {profileTab==="finance"&&(user.role==="admin"||user.role==="payroll_manager")&&<Panel title="Restricted bank details" aside={<span className="muted">Account number stays masked until explicitly revealed.</span>}>{data.bank?<><p><b>{data.bank.account_holder}</b> · {data.bank.bank_name} · {data.bank.account_number_masked} · {data.bank.ifsc} · <Pill tone={data.bank.status==="Verified"?"green":data.bank.status==="Changes Requested"?"red":"amber"}>{data.bank.status}</Pill></p>{data.bank.review_note&&<p>{data.bank.review_note}</p>}<Button onClick={reveal}>{revealedBank?"Refresh full details":"Reveal full account number"}</Button>{revealedBank&&<div className="sensitive-panel">Account: {revealedBank.account_number} · Branch: {revealedBank.branch_name||"—"} · UPI: {revealedBank.upi_id||"—"}</div>}<div className="toolbar"><Button onClick={()=>reviewBank("Verified")}>Verify</Button><Button onClick={()=>reviewBank("Changes Requested")}>Request correction</Button><Button onClick={()=>reviewBank("Rejected")}>Reject</Button></div><small>Submitted {data.bank.submitted_at?showTime(data.bank.submitted_at):"—"} · Verified {data.bank.verified_at?showTime(data.bank.verified_at):"—"} · Last modified {data.bank.updated_at?showTime(data.bank.updated_at):"—"}</small><h3>Verification and access history</h3><EventList rows={(data.bankHistory||[]).map(x=>({title:`${x.action} · ${x.status}`,detail:`${x.actor_name} · ${showTime(x.created_at)}${x.note?` · ${x.note}`:""}`}))}/></>:<Empty>No bank details submitted.</Empty>}</Panel>}
-      {profileTab==="activity"&&<Panel title="Activity history">{user.role==="admin"&&<form className="form-grid manual-leave-form" onSubmit={async ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(ev.currentTarget));d.user_id=e.user_id;try{await api("/api/hrm/employee-entry",{method:"POST",body:JSON.stringify(d)});ev.currentTarget.reset();toast("Profile entry added to this employee.");await reload()}catch(err){toast(err.message)}}}><Field name="title" label="Entry title"/><div className="field full"><label htmlFor="employee-entry-details">Details</label><textarea id="employee-entry-details" name="details" required maxLength="2000" placeholder="Add an Admin note, achievement, or other employee record entry."/></div><div className="field"><Button primary>Add profile entry</Button></div></form>}<EventList rows={(data.activity||[]).map(x=>({title:x.action,detail:`${x.actor_name||"System"} · ${showTime(x.created_at)} · ${x.details}`}))}/></Panel>}
+      <Header tag="EMPLOYEE PROFILE" title={e.name || "Employee profile"} description={`${e.employee_code || "Employee ID pending"} · ${e.title || "Employee"} · ${e.department || "Unassigned department"}`}><Button onClick={() => setPage(user.role === "manager" ? "Work updates" : user.role === "payroll_manager" ? "Bank reviews" : "Employees")}>← Back to team</Button></Header>
+      <section className="employee-bio-hero">{e.avatar_data ? <img src={e.avatar_data} alt={`${e.name} profile`} /> : <div className="avatar-placeholder">{(e.name || "E").split(/\s+/).map(x => x[0]).slice(0, 2).join("")}</div>}<div><span className="eyebrow">MACROW PEOPLE · EMPLOYEE BIO</span><h2>{e.name}</h2><p>{e.title || "Team member"} · {e.department || "Department to be assigned"} · {e.location || "Hybrid"}</p><blockquote>{e.bio || "A short introduction has not been added yet."}</blockquote>{e.skills?.length > 0 && <div className="bio-tags">{e.skills.map(x => <span key={x}>{x}</span>)}</div>}</div></section>
+      <div className="cards">{[["Assigned tasks", s.total_tasks], ["Completed", s.completed], ["In progress", s.in_progress], ["Pending", s.pending], ["Overdue", s.overdue], ["Blocked", s.blocked], ["Active projects", s.active_projects], ["Daily updates", s.daily_updates]].map(([label, value]) => <Stat key={label} label={label} value={value || 0} detail={label === "Daily updates" ? "Reported separately from productivity" : "From recorded tasks"} icon="·" />)}</div>
+      <nav className="profile-tabs" role="tablist" aria-label="Employee profile sections">{profileTabs.map(([tab, label]) => <button type="button" role="tab" aria-selected={profileTab === tab} className={profileTab === tab ? "selected" : ""} key={tab} onClick={() => setProfileTab(tab)}>{label}</button>)}</nav>
+      {profileTab === "overview" && <><Panel title="Personal & professional bio"><div className="profile-grid"><p><b>Official email</b><br />{e.email}</p><p><b>Phone</b><br />{e.phone || "—"}</p><p><b>Pronouns</b><br />{e.pronouns || "—"}</p><p><b>Address</b><br />{e.address || "—"}</p><p><b>Emergency contact</b><br />{e.emergency_contact || "—"}</p><p><b>Date of birth</b><br />{e.date_of_birth || "—"}</p><p><b>Employee ID</b><br />{e.employee_code || "—"}</p><p><b>Reporting manager</b><br />{e.manager_name || employeesList.find(x => x.id === e.manager_id)?.name || "—"}</p><p><b>Joined</b><br />{e.start_date || "—"}</p><p><b>Location</b><br />{e.location || "—"}</p><p><b>Interests</b><br />{e.interests || "—"}</p><p><b>LinkedIn</b><br />{e.linkedin_url || "—"}</p><p><b>Website</b><br />{e.website_url || "—"}</p><p><b>Account</b><br />{e.active ? "Active" : "Disabled"}</p><p><b>Responsibilities</b><br />{e.responsibilities || "—"}</p><p><b>Certifications</b><br />{(e.certifications || []).join(", ") || "—"}</p><p><b>Profile updated</b><br />{e.profile_updated_at ? showTime(e.profile_updated_at) : "—"}</p><p><b>Profile created</b><br />{showTime(e.created_at)}</p><p><b>Annual CTC</b><br />{e.annual_ctc_paise ? cash(Number(e.annual_ctc_paise) / 100) : "Not set"}</p></div></Panel><Panel title="Skills & strengths"><div className="bio-tags">{(e.skills || []).map(x => <span key={x}>{x}</span>)}{!(e.skills || []).length && <span>Skills not added yet</span>}</div></Panel></>}
+      {profileTab === "employment" && (user.role === "admin" || user.role === "hr_manager") && <Panel title="Edit employee record"><form className="form-grid" onSubmit={async ev => { ev.preventDefault(); try { const d = Object.fromEntries(new FormData(ev.currentTarget)); d.skills = String(d.skills || "").split(",").map(x => x.trim()).filter(Boolean); d.certifications = String(d.certifications || "").split(",").map(x => x.trim()).filter(Boolean); const photo = ev.currentTarget.elements.avatar_file?.files?.[0]; if (photo) d.avatar_data = await resizedImageData(photo); else d.avatar_data = e.avatar_data || ""; delete d.avatar_file; if (!d.annual_ctc) delete d.annual_ctc; await api(`/api/hrm/employees/${encodeURIComponent(e.user_id)}/profile`, { method: "PUT", body: JSON.stringify(d) }); toast("Employee profile saved and audit recorded."); await reload() } catch (err) { toast(err.message) } }}><Field name="employee_code" label="Employee ID" defaultValue={e.employee_code || ""} /><Field name="title" label="Designation" defaultValue={e.title || ""} /><Field name="department" label="Department" defaultValue={e.department || ""} />{user.role === "admin" && <><Field name="annual_ctc" label="Annual CTC (INR)" type="number" min="1" step="0.01" required={false} defaultValue={e.annual_ctc_paise ? Number(e.annual_ctc_paise) / 100 : ""} /><Field name="ctc_effective_from" label="CTC effective from" type="date" required={false} defaultValue={today()} /></>}<SelectField name="location" label="Work location" defaultValue={e.location || "Hybrid"} options={["Onsite", "Remote", "Hybrid"].map(x => [x, x])} /><Field name="start_date" label="Joining date" type="date" defaultValue={e.start_date || ""} /><Field name="phone" label="Contact number" type="tel" required={false} defaultValue={e.phone || ""} /><Field name="emergency_contact" label="Emergency contact" required={false} defaultValue={e.emergency_contact || ""} /><Field name="date_of_birth" label="Date of birth" type="date" required={false} defaultValue={e.date_of_birth || ""} /><Field name="address" label="Address" required={false} defaultValue={e.address || ""} /><Field name="manager_id" label="Reporting manager user ID" required={false} defaultValue={e.manager_id || ""} /><Field name="skills" label="Skills (comma separated)" required={false} defaultValue={(e.skills || []).join(", ")} /><Field name="pronouns" label="Pronouns" required={false} defaultValue={e.pronouns || ""} /><Field name="linkedin_url" label="LinkedIn URL" required={false} defaultValue={e.linkedin_url || ""} /><Field name="website_url" label="Website URL" required={false} defaultValue={e.website_url || ""} /><Field name="interests" label="Interests" required={false} defaultValue={e.interests || ""} /><Field name="certifications" label="Certifications (comma separated)" required={false} defaultValue={(e.certifications || []).join(", ")} /><div className="field full"><label htmlFor="edit-bio">Employee bio</label><textarea id="edit-bio" name="bio" defaultValue={e.bio || ""} /><label htmlFor="profile-avatar-file">Profile image</label><input id="profile-avatar-file" type="file" name="avatar_file" accept="image/png,image/jpeg,image/webp" /><label htmlFor="edit-responsibilities">Responsibilities</label><textarea id="edit-responsibilities" name="responsibilities" defaultValue={e.responsibilities || ""} /><Button primary>Save employee record</Button></div></form></Panel>}
+      {profileTab === "work" && (user.role === "admin" || user.role === "hr_manager") && <Panel title="Add daily tasks" aside={<span className="muted">Task rows are saved to this employee only.</span>}><form onSubmit={addProfileTasks}><div className="profile-task-table"><div className="profile-task-head"><b>S. No.</b><b>Task</b><b>Start date</b><b>Estimated deadline</b><b>Remarks</b><span /></div>{profileTaskRows.map((row, i) => <div className="profile-task-row" key={i}><b>{i + 1}</b><input aria-label={`Task ${i + 1}`} placeholder="What needs to be done?" value={row.title} onChange={ev => setProfileTaskRows(v => v.map((x, j) => j === i ? { ...x, title: ev.target.value } : x))} /><input aria-label={`Start date for task ${i + 1}`} type="date" value={row.start_date} onChange={ev => setProfileTaskRows(v => v.map((x, j) => j === i ? { ...x, start_date: ev.target.value } : x))} /><input aria-label={`Estimated deadline for task ${i + 1}`} type="date" value={row.due_date} onChange={ev => setProfileTaskRows(v => v.map((x, j) => j === i ? { ...x, due_date: ev.target.value } : x))} /><input aria-label={`Remarks for task ${i + 1}`} placeholder="Notes or context" value={row.description} onChange={ev => setProfileTaskRows(v => v.map((x, j) => j === i ? { ...x, description: ev.target.value } : x))} /><button type="button" className="task-row-remove" aria-label={`Remove task row ${i + 1}`} disabled={profileTaskRows.length === 1} onClick={() => setProfileTaskRows(v => v.filter((_, j) => j !== i))}>×</button></div>)}</div><div className="task-row-actions"><Button type="button" onClick={() => setProfileTaskRows(v => [...v, { title: "", start_date: today(), due_date: "", description: "" }])}>＋ Add more tasks</Button><Button primary type="submit">Assign tasks</Button></div></form></Panel>}
+      {profileTab === "work" && <Panel title="Assigned tasks"><DataTable columns={["Task", "Project", "Priority", "Status", "Start date", "Deadline", "Remarks"]} empty="No tasks assigned.">{(data.tasks || []).map(t => <tr key={t.id}><td>{t.title}</td><td>{t.project || "—"}</td><td>{t.priority}</td><td>{t.status}</td><td>{t.start_date || "—"}</td><td>{t.due_date || "—"}</td><td>{t.description || "—"}</td></tr>)}</DataTable></Panel>}
+      {profileTab === "work" && <Panel title="Projects and clients"><DataTable columns={["Project", "Client", "Responsibility", "Status", "Dates"]} empty="No project assignments recorded.">{(data.projects || []).map(x => <tr key={x.id}><td>{x.project}</td><td>{x.client || "—"}</td><td>{x.responsibility || "—"}</td><td>{x.status}</td><td>{x.start_date || "—"} {x.end_date || ""}</td></tr>)}</DataTable>{user.role === "admin" || user.role === "hr_manager" ? <form className="form-grid" onSubmit={async ev => { ev.preventDefault(); const d = Object.fromEntries(new FormData(ev.currentTarget)); d.user_id = e.user_id; try { await api("/api/hrm/employee-projects", { method: "POST", body: JSON.stringify(d) }); toast("Project assignment added."); await reload() } catch (err) { toast(err.message) } }}><Field name="project" label="Add project" /><Field name="client" label="Client" required={false} /><Field name="responsibility" label="Responsibility" required={false} /><Field name="start_date" label="Start date" type="date" required={false} /><Button primary>Assign project</Button></form> : null}</Panel>}
+      {profileTab === "work" && <Panel title="Date-wise updates board" aside={<span className="muted">Latest 14 work dates · newest first</span>}>{(data.updates || []).length ? <div className="update-kanban">{Array.from(new Set((data.updates || []).map(x => x.work_date))).sort((a, b) => b.localeCompare(a)).slice(0, 14).map(date => <section className="update-kanban-day" key={date}><header><b>{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</b><small>{(data.updates || []).filter(x => x.work_date === date).length} update(s)</small></header>{(data.updates || []).filter(x => x.work_date === date).map(x => <article className="update-kanban-card" key={x.id}><span className={`kanban-status ${String(x.status).toLowerCase().replaceAll(" ", "-")}`}>{x.status}</span><b>{x.title}</b><small>{x.project || "No project"} · {x.progress}% · {x.priority}</small><p>{x.description}</p>{x.blockers && <p className="kanban-blocker">Needs support: {x.blockers}</p>}{(x.comments || []).map(c => <small key={c.id}><b>{c.author_name}:</b> {c.body}</small>)}{["admin", "hr_manager", "manager"].includes(user.role) && <Button onClick={() => commentUpdate(x.id)}>Add feedback</Button>}</article>)}</section>)}</div> : <Empty>No work updates recorded.</Empty>}</Panel>}
+      {profileTab === "attendance" && <Panel title="Attendance for this employee"><DataTable columns={["Date", "Shift segments", "Status"]} empty="No attendance records found for this employee.">{(data.attendance || []).map(a => <tr key={a.id}><td>{a.work_date}</td><td>{JSON.parse(a.segments || "[]").map(s => <div key={s.start}>{showTime(s.start)} → {s.end ? showTime(s.end) : "In progress"}</div>)}</td><td><Pill tone={a.status === "in" ? "green" : "blue"}>{a.status === "in" ? "On shift" : "Completed / paused"}</Pill></td></tr>)}</DataTable></Panel>}
+      {profileTab === "leave" && <Panel title="Leave & requests for this employee">{user.role === "admin" && <form className="form-grid manual-leave-form" onSubmit={async ev => { ev.preventDefault(); const d = Object.fromEntries(new FormData(ev.currentTarget)); d.user_id = e.user_id; try { await api("/api/hrm/employee-leave", { method: "POST", body: JSON.stringify(d) }); ev.currentTarget.reset(); toast("Leave entry added to this employee record."); await reload() } catch (err) { toast(err.message) } }}><SelectField name="leave_type" label="Leave category" options={(data.leaveCategories || []).map(x => [x.name, `${x.name} · ${x.category}`])} /><Field name="start_date" label="From" type="date" defaultValue={today()} /><Field name="end_date" label="To" type="date" defaultValue={today()} /><Field name="days" label="Leave days" type="number" min="0.5" step="0.5" defaultValue="1" /><Field name="details" label="Admin note" required={false} placeholder="Optional note for the employee" /><div className="field"><Button primary>Add leave entry</Button></div></form>}<DataTable columns={["Request", "Type", "Date range", "Calculated days", "Status", "Decision note"]} empty="No employee requests yet.">{(data.requests || []).map(r => <tr key={r.id}><td>{r.details}</td><td>{r.leave_type || r.kind}</td><td>{r.start_date || "—"}{r.end_date && r.end_date !== r.start_date ? ` – ${r.end_date}` : ""}</td><td>{r.kind === "Leave" ? Number(r.days || 0) : "—"}</td><td><Pill tone={r.status === "Approved" ? "green" : r.status === "Rejected" ? "red" : "amber"}>{r.status}</Pill></td><td>{r.decision_note || "—"}</td></tr>)}</DataTable><small className="muted">Leave day totals exclude Saturday, Sunday, and Admin-configured company holidays. Holiday dates remain paid-off days.</small></Panel>}
+      {profileTab === "payroll" && <Panel title="Payroll & payslips for this employee"><DataTable columns={["Period", "Days paid", "Paid leave", "Unpaid leave", "Gross", "Deductions", "Net", "Status", "Payslip"]} empty="No payroll records for this employee.">{(data.payroll || []).map(p => <tr key={p.id}><td>{p.period}</td><td>{p.payable_days}</td><td>{p.paid_leave_days}</td><td>{p.unpaid_leave_days}</td><td>{cash(p.gross_paise / 100)}</td><td>{cash(p.total_deductions_paise / 100)}</td><td><b>{cash(p.net_paise / 100)}</b></td><td>{p.period_status}</td><td>{["Published", "Paid"].includes(p.period_status) ? <Button onClick={() => downloadPayslip(p.id, toast)}>View / download PDF</Button> : "Not published"}</td></tr>)}</DataTable></Panel>}
+      {profileTab === "finance" && (user.role === "admin" || user.role === "payroll_manager") && <Panel title="Restricted bank details" aside={<span className="muted">Account number stays masked until explicitly revealed.</span>}>{data.bank ? <><p><b>{data.bank.account_holder}</b> · {data.bank.bank_name} · {data.bank.account_number_masked} · {data.bank.ifsc} · <Pill tone={data.bank.status === "Verified" ? "green" : data.bank.status === "Changes Requested" ? "red" : "amber"}>{data.bank.status}</Pill></p>{data.bank.review_note && <p>{data.bank.review_note}</p>}<Button onClick={reveal}>{revealedBank ? "Refresh full details" : "Reveal full account number"}</Button>{revealedBank && <div className="sensitive-panel">Account: {revealedBank.account_number} · Branch: {revealedBank.branch_name || "—"} · UPI: {revealedBank.upi_id || "—"}</div>}<div className="toolbar"><Button onClick={() => reviewBank("Verified")}>Verify</Button><Button onClick={() => reviewBank("Changes Requested")}>Request correction</Button><Button onClick={() => reviewBank("Rejected")}>Reject</Button></div><small>Submitted {data.bank.submitted_at ? showTime(data.bank.submitted_at) : "—"} · Verified {data.bank.verified_at ? showTime(data.bank.verified_at) : "—"} · Last modified {data.bank.updated_at ? showTime(data.bank.updated_at) : "—"}</small><h3>Verification and access history</h3><EventList rows={(data.bankHistory || []).map(x => ({ title: `${x.action} · ${x.status}`, detail: `${x.actor_name} · ${showTime(x.created_at)}${x.note ? ` · ${x.note}` : ""}` }))} /></> : <Empty>No bank details submitted.</Empty>}</Panel>}
+      {profileTab === "activity" && <Panel title="Activity history">{user.role === "admin" && <form className="form-grid manual-leave-form" onSubmit={async ev => { ev.preventDefault(); const d = Object.fromEntries(new FormData(ev.currentTarget)); d.user_id = e.user_id; try { await api("/api/hrm/employee-entry", { method: "POST", body: JSON.stringify(d) }); ev.currentTarget.reset(); toast("Profile entry added to this employee."); await reload() } catch (err) { toast(err.message) } }}><Field name="title" label="Entry title" /><div className="field full"><label htmlFor="employee-entry-details">Details</label><textarea id="employee-entry-details" name="details" required maxLength="2000" placeholder="Add an Admin note, achievement, or other employee record entry." /></div><div className="field"><Button primary>Add profile entry</Button></div></form>}<EventList rows={(data.activity || []).map(x => ({ title: x.action, detail: `${x.actor_name || "System"} · ${showTime(x.created_at)} · ${x.details}` }))} /></Panel>}
     </>;
   }
   if (page === "Employees")
@@ -1424,17 +1560,17 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           </DataTable>
         </Panel>
         <Panel title="Active employee access" aside={<span className="muted">Disable or restore sign-in access</span>}>
-          <div className="toolbar employee-toolbar"><select aria-label="Filter department" value={directoryDepartment} onChange={e=>{setDirectoryDepartment(e.target.value);setDirectoryPage(1)}}><option>All departments</option>{[...new Set(employeesList.map(x=>x.department).filter(Boolean))].sort().map(x=><option key={x}>{x}</option>)}</select><select aria-label="Filter designation" value={directoryTitle} onChange={e=>{setDirectoryTitle(e.target.value);setDirectoryPage(1)}}><option>All designations</option>{[...new Set(employeesList.map(x=>x.title).filter(Boolean))].sort().map(x=><option key={x}>{x}</option>)}</select><select aria-label="Filter reporting manager" value={directoryManager} onChange={e=>{setDirectoryManager(e.target.value);setDirectoryPage(1)}}><option>All managers</option>{(data.managers||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><select aria-label="Filter access status" value={directoryAccess} onChange={e=>{setDirectoryAccess(e.target.value);setDirectoryPage(1)}}>{["All access","Active","Disabled"].map(x=><option key={x}>{x}</option>)}</select><select aria-label="Sort employees" value={directorySort} onChange={e=>setDirectorySort(e.target.value)}><option value="name">Sort by name</option><option value="joining_date">Sort by joining date</option><option value="activity">Sort by latest activity</option></select></div>
+          <div className="toolbar employee-toolbar"><select aria-label="Filter department" value={directoryDepartment} onChange={e => { setDirectoryDepartment(e.target.value); setDirectoryPage(1) }}><option>All departments</option>{[...new Set(employeesList.map(x => x.department).filter(Boolean))].sort().map(x => <option key={x}>{x}</option>)}</select><select aria-label="Filter designation" value={directoryTitle} onChange={e => { setDirectoryTitle(e.target.value); setDirectoryPage(1) }}><option>All designations</option>{[...new Set(employeesList.map(x => x.title).filter(Boolean))].sort().map(x => <option key={x}>{x}</option>)}</select><select aria-label="Filter reporting manager" value={directoryManager} onChange={e => { setDirectoryManager(e.target.value); setDirectoryPage(1) }}><option>All managers</option>{(data.managers || []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select><select aria-label="Filter access status" value={directoryAccess} onChange={e => { setDirectoryAccess(e.target.value); setDirectoryPage(1) }}>{["All access", "Active", "Disabled"].map(x => <option key={x}>{x}</option>)}</select><select aria-label="Sort employees" value={directorySort} onChange={e => setDirectorySort(e.target.value)}><option value="name">Sort by name</option><option value="joining_date">Sort by joining date</option><option value="activity">Sort by latest activity</option></select></div>
           <DataTable columns={["Employee", "Role", "Department", "Location", "Email", "Tasks / activity", "Access"]} empty="No employee records match your search.">
             {pagedEmployees.length ? pagedEmployees.map((x) => (
               <tr key={x.id}>
                 <td>{x.name}<br /><span className="muted">{x.title || "—"}</span></td><td>{x.role.replaceAll("_", " ")}</td><td>{x.department || "—"}</td><td>{x.location || "—"}</td><td>{x.email}</td>
-                <td>{(x.task_summary||[]).reduce((a,r)=>a+Number(r.count||0),0)} tasks · {x.active_projects||0} projects<br/><span className="muted">{x.last_activity?showTime(x.last_activity):"No activity recorded"}</span><br/><Button onClick={()=>setPage(`Employee profile · ${x.id}`)}>View profile</Button></td>
+                <td>{(x.task_summary || []).reduce((a, r) => a + Number(r.count || 0), 0)} tasks · {x.active_projects || 0} projects<br /><span className="muted">{x.last_activity ? showTime(x.last_activity) : "No activity recorded"}</span><br /><Button onClick={() => setPage(`Employee profile · ${x.id}`)}>View profile</Button></td>
                 <td><Pill tone={x.active ? "green" : "red"}>{x.active ? "Active" : "Disabled"}</Pill>{" "}<Button onClick={() => action("access", { id: x.id, active: !x.active })}>{x.active ? "Disable" : "Reactivate"}</Button></td>
               </tr>
             )) : null}
           </DataTable>
-          <div className="toolbar"><span className="muted">Showing {visibleEmployees.length ? (directoryPage-1)*employeePageSize+1 : 0}–{Math.min(directoryPage*employeePageSize,visibleEmployees.length)} of {visibleEmployees.length}</span><Button disabled={directoryPage<=1} onClick={()=>setDirectoryPage(n=>Math.max(1,n-1))}>Previous</Button><Button disabled={directoryPage*employeePageSize>=visibleEmployees.length} onClick={()=>setDirectoryPage(n=>n+1)}>Next</Button></div>
+          <div className="toolbar"><span className="muted">Showing {visibleEmployees.length ? (directoryPage - 1) * employeePageSize + 1 : 0}–{Math.min(directoryPage * employeePageSize, visibleEmployees.length)} of {visibleEmployees.length}</span><Button disabled={directoryPage <= 1} onClick={() => setDirectoryPage(n => Math.max(1, n - 1))}>Previous</Button><Button disabled={directoryPage * employeePageSize >= visibleEmployees.length} onClick={() => setDirectoryPage(n => n + 1)}>Next</Button></div>
         </Panel>
         {inviteOpen && <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setInviteOpen(false); }}>
           <section className="onboarding-drawer" role="dialog" aria-modal="true" aria-labelledby="invite-drawer-title">
@@ -1464,18 +1600,18 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           <form className="form-grid" onSubmit={async (event) => {
             event.preventDefault();
             try {
-              await api("/api/hrm/attendance/correction", { method:"POST", body:JSON.stringify(attendanceDraft) });
+              await api("/api/hrm/attendance/correction", { method: "POST", body: JSON.stringify(attendanceDraft) });
               toast("Attendance updated. Any draft payroll for this month has been recalculated.");
-              setAttendanceDraft({ user_id:"", work_date:today(), admin_status:"present", clock_in:"10:00", clock_out:"19:00", admin_note:"" });
+              setAttendanceDraft({ user_id: "", work_date: today(), admin_status: "present", clock_in: "10:00", clock_out: "19:00", admin_note: "" });
               await reload();
             } catch (error) { toast(error.message); }
           }}>
-            <div className="field"><label htmlFor="attendance-employee">Employee</label><select id="attendance-employee" required value={attendanceDraft.user_id} onChange={(event) => setAttendanceDraft((current) => ({...current,user_id:event.target.value}))}><option value="">Select employee</option>{(data.employees||[]).map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></div>
-            <div className="field"><label htmlFor="attendance-date">Attendance date</label><input id="attendance-date" type="date" required max={today()} value={attendanceDraft.work_date} onChange={(event) => setAttendanceDraft((current) => ({...current,work_date:event.target.value}))}/></div>
-            <div className="field"><label htmlFor="attendance-status">Attendance status</label><select id="attendance-status" value={attendanceDraft.admin_status} onChange={(event) => setAttendanceDraft((current) => ({...current,admin_status:event.target.value}))}><option value="present">Present · full day</option><option value="half_day">Half day</option><option value="absent">Absent</option></select></div>
-            <div className="field"><label htmlFor="attendance-in">Clock in (optional)</label><input id="attendance-in" type="time" value={attendanceDraft.clock_in} onChange={(event) => setAttendanceDraft((current) => ({...current,clock_in:event.target.value}))}/></div>
-            <div className="field"><label htmlFor="attendance-out">Clock out (optional)</label><input id="attendance-out" type="time" value={attendanceDraft.clock_out} onChange={(event) => setAttendanceDraft((current) => ({...current,clock_out:event.target.value}))}/></div>
-            <div className="field"><label htmlFor="attendance-note">Admin note</label><input id="attendance-note" value={attendanceDraft.admin_note} onChange={(event) => setAttendanceDraft((current) => ({...current,admin_note:event.target.value}))} placeholder="Reason for correction" maxLength={1000}/></div>
+            <div className="field"><label htmlFor="attendance-employee">Employee</label><select id="attendance-employee" required value={attendanceDraft.user_id} onChange={(event) => setAttendanceDraft((current) => ({ ...current, user_id: event.target.value }))}><option value="">Select employee</option>{(data.employees || []).map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></div>
+            <div className="field"><label htmlFor="attendance-date">Attendance date</label><input id="attendance-date" type="date" required max={today()} value={attendanceDraft.work_date} onChange={(event) => setAttendanceDraft((current) => ({ ...current, work_date: event.target.value }))} /></div>
+            <div className="field"><label htmlFor="attendance-status">Attendance status</label><select id="attendance-status" value={attendanceDraft.admin_status} onChange={(event) => setAttendanceDraft((current) => ({ ...current, admin_status: event.target.value }))}><option value="present">Present · full day</option><option value="half_day">Half day</option><option value="absent">Absent</option></select></div>
+            <div className="field"><label htmlFor="attendance-in">Clock in (optional)</label><input id="attendance-in" type="time" value={attendanceDraft.clock_in} onChange={(event) => setAttendanceDraft((current) => ({ ...current, clock_in: event.target.value }))} /></div>
+            <div className="field"><label htmlFor="attendance-out">Clock out (optional)</label><input id="attendance-out" type="time" value={attendanceDraft.clock_out} onChange={(event) => setAttendanceDraft((current) => ({ ...current, clock_out: event.target.value }))} /></div>
+            <div className="field"><label htmlFor="attendance-note">Admin note</label><input id="attendance-note" value={attendanceDraft.admin_note} onChange={(event) => setAttendanceDraft((current) => ({ ...current, admin_note: event.target.value }))} placeholder="Reason for correction" maxLength={1000} /></div>
             <div className="field"><Button primary>Save attendance</Button></div>
           </form>
           <p className="help">Payroll counts recorded Present days only. Half days count as 0.5; Absent and unrecorded days do not count. Saving a correction updates the employee record and recalculates any editable payroll draft.</p>
@@ -1493,12 +1629,12 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
                     </div>
                   ))}
                 </td>
-                <td>{x.admin_status ? ({present:"Present · Admin updated",half_day:"Half day · Admin updated",absent:"Absent · Admin updated"}[x.admin_status]||x.admin_status) : x.status === "in" ? "On shift" : JSON.parse(x.segments||"[]").some((segment)=>segment.start&&segment.end) ? "Present" : "No attendance"}{x.admin_note&&<div className="muted">{x.admin_note}</div>}</td>
+                <td>{x.admin_status ? ({ present: "Present · Admin updated", half_day: "Half day · Admin updated", absent: "Absent · Admin updated" }[x.admin_status] || x.admin_status) : x.status === "in" ? "On shift" : JSON.parse(x.segments || "[]").some((segment) => segment.start && segment.end) ? "Present" : "No attendance"}{x.admin_note && <div className="muted">{x.admin_note}</div>}</td>
                 {user.role === "admin" && <><td>{x.admin_updated_at ? showTime(x.admin_updated_at) : "Employee clock"}</td><td><Button onClick={() => {
-                  const segments=JSON.parse(x.segments||"[]"),first=segments.find((segment)=>segment.start),last=[...segments].reverse().find((segment)=>segment.end);
-                  const clock=(value)=>value?new Date(value).toLocaleTimeString("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):"";
-                  setAttendanceDraft({user_id:x.user_id,work_date:x.work_date,admin_status:x.admin_status|| (segments.some((segment)=>segment.start&&segment.end)?"present":"absent"),clock_in:clock(first?.start),clock_out:clock(last?.end),admin_note:x.admin_note||""});
-                  document.getElementById("attendance-correction")?.scrollIntoView({behavior:"smooth",block:"start"});
+                  const segments = JSON.parse(x.segments || "[]"), first = segments.find((segment) => segment.start), last = [...segments].reverse().find((segment) => segment.end);
+                  const clock = (value) => value ? new Date(value).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "";
+                  setAttendanceDraft({ user_id: x.user_id, work_date: x.work_date, admin_status: x.admin_status || (segments.some((segment) => segment.start && segment.end) ? "present" : "absent"), clock_in: clock(first?.start), clock_out: clock(last?.end), admin_note: x.admin_note || "" });
+                  document.getElementById("attendance-correction")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}>Edit</Button></td></>}
               </tr>
             ))}
@@ -1620,7 +1756,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
                     step="0.5"
                     defaultValue={r.entitlement_days}
                   />
-                  <Field name={`monthly-${i}`} label="Monthly accrual (e.g. PL)" type="number" required={false} min="0" step="0.5" defaultValue={r.monthly_accrual_days||0}/>
+                  <Field name={`monthly-${i}`} label="Monthly accrual (e.g. PL)" type="number" required={false} min="0" step="0.5" defaultValue={r.monthly_accrual_days || 0} />
                   <label>
                     <input
                       type="checkbox"
@@ -1673,7 +1809,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
             </Button>{" "}
             <Button type="button" onClick={() => setRules((current) => {
               const existing = new Set(current.map((r) => String(r.name || "").trim().toLowerCase()));
-              return [...current, ...commonLeaveTypes.filter((name) => !existing.has(name.toLowerCase())).map((name) => ({name, category:"Paid", entitlement_days:0, monthly_accrual_days:0, allow_half_day:1, excess_to_unpaid:1, notes:"Set entitlement and paid/unpaid treatment to match company policy."}))];
+              return [...current, ...commonLeaveTypes.filter((name) => !existing.has(name.toLowerCase())).map((name) => ({ name, category: "Paid", entitlement_days: 0, monthly_accrual_days: 0, allow_half_day: 1, excess_to_unpaid: 1, notes: "Set entitlement and paid/unpaid treatment to match company policy." }))];
             })}>＋ Add common leave types</Button>{" "}
             <Button primary>Save rules</Button>
             {commonFormError}
@@ -1709,7 +1845,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
                 <label htmlFor="body">Message</label>
                 <textarea id="body" name="body" required />
               </div>
-              <div className="field full"><label htmlFor="update-image">Greeting or announcement image</label><input id="update-image" type="file" name="image_file" accept="image/png,image/jpeg,image/webp"/><small>Optional · PNG, JPEG, or WebP · compressed before secure upload.</small></div>
+              <div className="field full"><label htmlFor="update-image">Greeting or announcement image</label><input id="update-image" type="file" name="image_file" accept="image/png,image/jpeg,image/webp" /><small>Optional · PNG, JPEG, or WebP · compressed before secure upload.</small></div>
               <div className="field full">
                 <label>
                   <input type="checkbox" name="pinned" /> Pin update
@@ -1721,7 +1857,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           </Panel>
         )}
         <Panel title={["admin", "hr_manager"].includes(user.role) ? "Published updates" : "Company notices"}>
-          <div className="announcement-feed">{(data.updates || []).map((x) => <article className="announcement-card" key={x.id}>{x.image_data&&<img src={x.image_data} alt=""/>}<div className="announcement-copy"><div><b>{x.title}</b>{x.pinned?<Pill tone="orange">Pinned</Pill>:null}</div><p>{x.body}</p><small>{showTime(x.created_at)}</small></div></article>)}</div>
+          <div className="announcement-feed">{(data.updates || []).map((x) => <article className="announcement-card" key={x.id}>{x.image_data && <img src={x.image_data} alt="" />}<div className="announcement-copy"><div><b>{x.title}</b>{x.pinned ? <Pill tone="orange">Pinned</Pill> : null}</div><p>{x.body}</p><small>{showTime(x.created_at)}</small></div></article>)}</div>
           {!(data.updates || []).length && <Empty>No updates published yet.</Empty>}
         </Panel>
       </>
@@ -2002,246 +2138,246 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           </>
         ) : (
           <>
-        {["admin", "payroll_manager"].includes(user.role) && (
-          <Panel title="Salary setup from employee CTC"><p>Enter an employee’s annual CTC in their Employment profile. Macrow People calculates the monthly CTC and breakdown automatically: Basic 50%, HRA 20%, Telephone &amp; Internet 12.67%, and Other Allowance as the balance. Payroll pay is based on recorded attendance: Present counts as one day and Half day as 0.5.</p><p className="help">The salary structure is effective from the date entered in the employee profile. Draft payroll must still be reviewed and approved by Admin.</p></Panel>
-        )}
-        {["admin", "payroll_manager"].includes(user.role) && (
-          <Panel title="Generate monthly draft">
-            <p className="payroll-auto-note"><b>Monthly draft automation is active.</b> On the first server check in a new month, the prior month is calculated from employee CTC and recorded attendance. Only Present days count as payable days; Half days count as 0.5. Missing or unrecorded attendance is not paid, so review the attendance register before final approval. Drafts stay in Draft / Validation and are never automatically approved, published, or paid.</p>
-            <form
-              data-form="payroll-generate"
-              className="form-grid"
-              onSubmit={saveForm}
-            >
-              <Field name="period" label="Payroll month" type="month" />
-              <div className="field">
-                <Button primary>Calculate draft</Button>
-                {commonFormError}
-              </div>
-            </form>
-          </Panel>
-        )}
-        <Panel title="Payroll workflow">
-          <DataTable
-            columns={[
-              "Period",
-              "Status",
-              "Employees",
-              "Gross",
-              "Net",
-              "Actions",
-            ]}
-          >
-            {data.periods.map((p) => (
-              <tr key={p.id}>
-                <td>{p.period}</td>
-                <td>
-                  <Pill>{p.status}</Pill>
-                </td>
-                <td>{p.item_count}</td>
-                <td>{cash(p.gross_paise / 100)}</td>
-                <td>{cash(p.net_paise / 100)}</td>
-                <td>
-                  <Button
-                    onClick={async () => {
-                      try {
-                        const r = await api(`/api/hrm/payroll/periods/${p.id}`);
-                        setPayrollDetail(r.period);
-                      } catch (e) {
-                        toast(e.message);
-                      }
-                    }}
-                  >
-                    Review
-                  </Button>{" "}
-                  {[
-                    "Validation",
-                    "HR Review",
-                    "Payroll Approval",
-                    "Finalized",
-                  ].includes(p.status) && (
+            {["admin", "payroll_manager"].includes(user.role) && (
+              <Panel title="Salary setup from employee CTC"><p>Enter an employee’s annual CTC in their Employment profile. Macrow People calculates the monthly CTC and breakdown automatically: Basic 50%, HRA 20%, Telephone &amp; Internet 12.67%, and Other Allowance as the balance. Payroll pay is based on recorded attendance: Present counts as one day and Half day as 0.5.</p><p className="help">The salary structure is effective from the date entered in the employee profile. Draft payroll must still be reviewed and approved by Admin.</p></Panel>
+            )}
+            {["admin", "payroll_manager"].includes(user.role) && (
+              <Panel title="Generate monthly draft">
+                <p className="payroll-auto-note"><b>Monthly draft automation is active.</b> On the first server check in a new month, the prior month is calculated from employee CTC and recorded attendance. Only Present days count as payable days; Half days count as 0.5. Missing or unrecorded attendance is not paid, so review the attendance register before final approval. Drafts stay in Draft / Validation and are never automatically approved, published, or paid.</p>
+                <form
+                  data-form="payroll-generate"
+                  className="form-grid"
+                  onSubmit={saveForm}
+                >
+                  <Field name="period" label="Payroll month" type="month" />
+                  <div className="field">
+                    <Button primary>Calculate draft</Button>
+                    {commonFormError}
+                  </div>
+                </form>
+              </Panel>
+            )}
+            <Panel title="Payroll workflow">
+              <DataTable
+                columns={[
+                  "Period",
+                  "Status",
+                  "Employees",
+                  "Gross",
+                  "Net",
+                  "Actions",
+                ]}
+              >
+                {data.periods.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.period}</td>
+                    <td>
+                      <Pill>{p.status}</Pill>
+                    </td>
+                    <td>{p.item_count}</td>
+                    <td>{cash(p.gross_paise / 100)}</td>
+                    <td>{cash(p.net_paise / 100)}</td>
+                    <td>
                       <Button
-                        primary
                         onClick={async () => {
-                          const to = {
-                            Validation: "HR Review",
-                            "HR Review": "Payroll Approval",
-                            "Payroll Approval": "Finalized",
-                            Finalized: "Published",
-                          }[p.status];
                           try {
-                            await api(
-                              `/api/hrm/payroll/periods/${p.id}/transition`,
-                              {
-                                method: "POST",
-                                body: JSON.stringify({
-                                  to,
-                                  note: "Reviewed in HRMS",
-                                }),
-                              },
-                            );
-                            toast(`Payroll moved to ${to}.`);
-                            await reload();
+                            const r = await api(`/api/hrm/payroll/periods/${p.id}`);
+                            setPayrollDetail(r.period);
                           } catch (e) {
                             toast(e.message);
                           }
                         }}
                       >
-                        {
-                          {
-                            Validation: "Send for HR review",
-                            "HR Review": "Send for payroll approval",
-                            "Payroll Approval": "Finalize",
-                            Finalized: "Publish payslips",
-                          }[p.status]
-                        }
-                      </Button>
-                    )}{" "}
-                  {p.status === "Published" && (
-                    <Button
-                      onClick={async () => {
-                        const reference =
-                          window.prompt("Payment batch reference (optional)") ||
-                          "";
-                        try {
-                          await api(`/api/hrm/payroll/periods/${p.id}/paid`, {
-                            method: "POST",
-                            body: JSON.stringify({ reference }),
-                          });
-                          await reload();
-                        } catch (e) {
-                          toast(e.message);
-                        }
-                      }}
-                    >
-                      Mark paid
-                    </Button>
-                  )}{" "}
-                  {["Draft", "Validation"].includes(p.status) && (
-                    <Button
-                      onClick={async () => {
-                        try {
-                          await api(
-                            `/api/hrm/payroll/periods/${p.id}/recalculate`,
-                            { method: "POST", body: "{}" },
-                          );
-                          toast("Draft recalculated.");
-                          await reload();
-                        } catch (e) {
-                          toast(e.message);
-                        }
-                      }}
-                    >
-                      Recalculate
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </DataTable>
-        </Panel>
-        {payrollDetail && (
-          <Panel
-            title={`${payrollDetail.period} · ${payrollDetail.status}`}
-            aside={
-              <Button onClick={() => setPayrollDetail(null)}>Close</Button>
-            }
-          >
-            <div className="event-list">
-              {(payrollDetail.validation || []).map((v, i) => (
-                <div className="event" key={i}>
-                  <Pill tone={v.level === "error" ? "red" : "amber"}>
-                    {v.level}
-                  </Pill>
-                  <div>
-                    <b>{v.code}</b>
-                    <small>{v.message}</small>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <DataTable
-              columns={[
-                "Employee",
-                "Scheduled",
-                "Present",
-                "Paid leave",
-                "Unpaid leave",
-                "Gross",
-                "Attendance adjustment",
-                "Other deductions",
-                "Net",
-                "Payslip",
-              ]}
-            >
-              {payrollDetail.items.map((x) => (
-                <tr key={x.id}>
-                  <td>{x.name}</td>
-                  <td>{x.scheduled_days}</td>
-                  <td>{x.present_days}</td>
-                  <td>{x.paid_leave_days}</td>
-                  <td>{x.unpaid_leave_days}</td>
-                  <td>{cash(x.gross_paise / 100)}</td>
-                  <td>{cash(x.leave_deduction_paise / 100)}</td>
-                  <td>
-                    {cash(
-                      (x.total_deductions_paise - x.leave_deduction_paise) /
-                      100,
-                    )}
-                  </td>
-                  <td>{cash(x.net_paise / 100)}</td>
-                  <td>
-                    <Button onClick={() => downloadPayslip(x.id, toast)}>
-                      Print / save PDF
-                    </Button>{" "}
-                    {["Finalized", "Published", "Paid"].includes(
-                      payrollDetail.status,
-                    ) && (
+                        Review
+                      </Button>{" "}
+                      {[
+                        "Validation",
+                        "HR Review",
+                        "Payroll Approval",
+                        "Finalized",
+                      ].includes(p.status) && (
+                          <Button
+                            primary
+                            onClick={async () => {
+                              const to = {
+                                Validation: "HR Review",
+                                "HR Review": "Payroll Approval",
+                                "Payroll Approval": "Finalized",
+                                Finalized: "Published",
+                              }[p.status];
+                              try {
+                                await api(
+                                  `/api/hrm/payroll/periods/${p.id}/transition`,
+                                  {
+                                    method: "POST",
+                                    body: JSON.stringify({
+                                      to,
+                                      note: "Reviewed in HRMS",
+                                    }),
+                                  },
+                                );
+                                toast(`Payroll moved to ${to}.`);
+                                await reload();
+                              } catch (e) {
+                                toast(e.message);
+                              }
+                            }}
+                          >
+                            {
+                              {
+                                Validation: "Send for HR review",
+                                "HR Review": "Send for payroll approval",
+                                "Payroll Approval": "Finalize",
+                                Finalized: "Publish payslips",
+                              }[p.status]
+                            }
+                          </Button>
+                        )}{" "}
+                      {p.status === "Published" && (
                         <Button
                           onClick={async () => {
-                            const amount = window.prompt(
-                              "Signed adjustment amount in INR",
-                            );
-                            if (amount === null) return;
-                            const reason =
-                              window.prompt("Reason for adjustment") || "";
+                            const reference =
+                              window.prompt("Payment batch reference (optional)") ||
+                              "";
                             try {
-                              await api(
-                                `/api/hrm/payroll/items/${x.id}/adjustments`,
-                                {
-                                  method: "POST",
-                                  body: JSON.stringify({
-                                    amount: Number(amount),
-                                    reason,
-                                  }),
-                                },
-                              );
-                              const r = await api(
-                                `/api/hrm/payroll/periods/${payrollDetail.id}`,
-                              );
-                              setPayrollDetail(r.period);
-                              toast("Adjustment recorded in the audit trail.");
+                              await api(`/api/hrm/payroll/periods/${p.id}/paid`, {
+                                method: "POST",
+                                body: JSON.stringify({ reference }),
+                              });
+                              await reload();
                             } catch (e) {
                               toast(e.message);
                             }
                           }}
                         >
-                          Adjustment
+                          Mark paid
+                        </Button>
+                      )}{" "}
+                      {["Draft", "Validation"].includes(p.status) && (
+                        <Button
+                          onClick={async () => {
+                            try {
+                              await api(
+                                `/api/hrm/payroll/periods/${p.id}/recalculate`,
+                                { method: "POST", body: "{}" },
+                              );
+                              toast("Draft recalculated.");
+                              await reload();
+                            } catch (e) {
+                              toast(e.message);
+                            }
+                          }}
+                        >
+                          Recalculate
                         </Button>
                       )}
-                  </td>
-                </tr>
-              ))}
-            </DataTable>
-          </Panel>
-        )}
-        <p className="help">
-          <a
-            href={`/api/hrm/reports/payroll.csv?period=${today().slice(0, 7)}`}
-          >
-            Download authorized payroll CSV
-          </a>
-        </p>
+                    </td>
+                  </tr>
+                ))}
+              </DataTable>
+            </Panel>
+            {payrollDetail && (
+              <Panel
+                title={`${payrollDetail.period} · ${payrollDetail.status}`}
+                aside={
+                  <Button onClick={() => setPayrollDetail(null)}>Close</Button>
+                }
+              >
+                <div className="event-list">
+                  {(payrollDetail.validation || []).map((v, i) => (
+                    <div className="event" key={i}>
+                      <Pill tone={v.level === "error" ? "red" : "amber"}>
+                        {v.level}
+                      </Pill>
+                      <div>
+                        <b>{v.code}</b>
+                        <small>{v.message}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <DataTable
+                  columns={[
+                    "Employee",
+                    "Scheduled",
+                    "Present",
+                    "Paid leave",
+                    "Unpaid leave",
+                    "Gross",
+                    "Attendance adjustment",
+                    "Other deductions",
+                    "Net",
+                    "Payslip",
+                  ]}
+                >
+                  {payrollDetail.items.map((x) => (
+                    <tr key={x.id}>
+                      <td>{x.name}</td>
+                      <td>{x.scheduled_days}</td>
+                      <td>{x.present_days}</td>
+                      <td>{x.paid_leave_days}</td>
+                      <td>{x.unpaid_leave_days}</td>
+                      <td>{cash(x.gross_paise / 100)}</td>
+                      <td>{cash(x.leave_deduction_paise / 100)}</td>
+                      <td>
+                        {cash(
+                          (x.total_deductions_paise - x.leave_deduction_paise) /
+                          100,
+                        )}
+                      </td>
+                      <td>{cash(x.net_paise / 100)}</td>
+                      <td>
+                        <Button onClick={() => downloadPayslip(x.id, toast)}>
+                          Print / save PDF
+                        </Button>{" "}
+                        {["Finalized", "Published", "Paid"].includes(
+                          payrollDetail.status,
+                        ) && (
+                            <Button
+                              onClick={async () => {
+                                const amount = window.prompt(
+                                  "Signed adjustment amount in INR",
+                                );
+                                if (amount === null) return;
+                                const reason =
+                                  window.prompt("Reason for adjustment") || "";
+                                try {
+                                  await api(
+                                    `/api/hrm/payroll/items/${x.id}/adjustments`,
+                                    {
+                                      method: "POST",
+                                      body: JSON.stringify({
+                                        amount: Number(amount),
+                                        reason,
+                                      }),
+                                    },
+                                  );
+                                  const r = await api(
+                                    `/api/hrm/payroll/periods/${payrollDetail.id}`,
+                                  );
+                                  setPayrollDetail(r.period);
+                                  toast("Adjustment recorded in the audit trail.");
+                                } catch (e) {
+                                  toast(e.message);
+                                }
+                              }}
+                            >
+                              Adjustment
+                            </Button>
+                          )}
+                      </td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </Panel>
+            )}
+            <p className="help">
+              <Button
+                onClick={() => downloadPayrollCsv(today().slice(0, 7), toast)}
+              >
+                Download authorized payroll CSV
+              </Button>
+            </p>
           </>
         )}
       </>
@@ -2251,14 +2387,14 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
     return (
       <>
         <Header tag="PAY" title="My payslips" description="Your CTC breakdown, attendance-based payable days, leave summary, and secure payslips." />
-        {latest&&<div className="cards"><Stat label="Latest net pay" value={cash(latest.net_paise/100)} detail={latest.period} icon="₹"/><Stat label="Payable days" value={latest.payable_days} detail="Present days, with half days counted as 0.5" icon="◷"/><Stat label="Paid leave" value={latest.paid_leave_days} detail="Approved leave shown for reference" icon="✓"/><Stat label="Unpaid leave" value={latest.unpaid_leave_days} detail="Approved leave shown for reference" icon="−"/></div>}
+        {latest && <div className="cards"><Stat label="Latest net pay" value={cash(latest.net_paise / 100)} detail={latest.period} icon="₹" /><Stat label="Payable days" value={latest.payable_days} detail="Present days, with half days counted as 0.5" icon="◷" /><Stat label="Paid leave" value={latest.paid_leave_days} detail="Approved leave shown for reference" icon="✓" /><Stat label="Unpaid leave" value={latest.unpaid_leave_days} detail="Approved leave shown for reference" icon="−" /></div>}
         <Panel title="Payslip history">
-          <DataTable columns={["Period","Payable days","Paid leave","Unpaid leave","Gross","Deductions","Net","Status","Components","Payslip"]}>
+          <DataTable columns={["Period", "Payable days", "Paid leave", "Unpaid leave", "Gross", "Deductions", "Net", "Status", "Components", "Payslip"]}>
             {data.periods.map((x) => (
               <tr key={x.id}>
                 <td>{x.period}</td><td>{x.payable_days}</td><td>{x.paid_leave_days}</td><td>{x.unpaid_leave_days}</td>
                 <td>{cash(x.gross_paise / 100)}</td><td>{cash(x.total_deductions_paise / 100)}</td><td>{cash(x.net_paise / 100)}</td><td>{x.period_status}</td>
-                <td><details className="payroll-breakdown"><summary>View breakdown</summary><div><b>CTC</b><span>Annual CTC · {cash(Number(x.calculation?.annual_ctc_paise||0)/100)}</span><span>Monthly CTC · {cash(Number(x.calculation?.monthly_ctc_paise||0)/100)}</span><b>Earnings</b><span>Basic · {cash(x.basic_paise/100)}</span>{[...(x.allowances||[]),...(x.earnings||[])].map((c,i)=><span key={i}>{c.name} · {cash(Number(c.amount_paise||0)/100)}</span>)}<b>Deductions</b><span>Attendance adjustment · {cash(x.leave_deduction_paise/100)}</span></div></details></td>
+                <td><details className="payroll-breakdown"><summary>View breakdown</summary><div><b>CTC</b><span>Annual CTC · {cash(Number(x.calculation?.annual_ctc_paise || 0) / 100)}</span><span>Monthly CTC · {cash(Number(x.calculation?.monthly_ctc_paise || 0) / 100)}</span><b>Earnings</b><span>Basic · {cash(x.basic_paise / 100)}</span>{[...(x.allowances || []), ...(x.earnings || [])].map((c, i) => <span key={i}>{c.name} · {cash(Number(c.amount_paise || 0) / 100)}</span>)}<b>Deductions</b><span>Attendance adjustment · {cash(x.leave_deduction_paise / 100)}</span></div></details></td>
                 <td><Button onClick={() => downloadPayslip(x.id, toast)}>View / save PDF</Button></td>
               </tr>
             ))}
@@ -2309,9 +2445,9 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
             · Pending: {data.leave.pending}
           </p>
           <p>
-            <a href={`/api/hrm/reports/payroll.csv?period=${data.period}`}>
+            <Button onClick={() => downloadPayrollCsv(data.period, toast)}>
               Download payroll CSV
-            </a>
+            </Button>
           </p>
         </Panel>
       </>
@@ -2356,8 +2492,8 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
       </>
     );
   if (page === "Audit log") {
-    const auditRows=(data.logs||[]).filter(x=>auditEmployee==="all"?true:x.employee_id===auditEmployee);
-    const auditGroups=Object.entries(auditRows.reduce((groups,row)=>{const name=row.employee_name||"Company-wide / system activity";(groups[name]??=[]).push(row);return groups;},{}));
+    const auditRows = (data.logs || []).filter(x => auditEmployee === "all" ? true : x.employee_id === auditEmployee);
+    const auditGroups = Object.entries(auditRows.reduce((groups, row) => { const name = row.employee_name || "Company-wide / system activity"; (groups[name] ??= []).push(row); return groups; }, {}));
     return (
       <>
         <Header
@@ -2365,8 +2501,8 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           title="Audit log"
           description="Administrative actions and decisions."
         />
-        <Panel title="Audit by employee" aside={<div className="field audit-filter"><label htmlFor="audit-employee">Employee</label><select id="audit-employee" value={auditEmployee} onChange={e=>setAuditEmployee(e.target.value)}><option value="all">All employees and company activity</option>{(data.employees||[]).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>}>
-          {auditGroups.map(([name,rows])=><details className="audit-group" key={name} open={auditEmployee!=="all"}><summary><b>{name}</b><Pill>{rows.length} entries</Pill></summary><EventList rows={rows.map(x=>({title:`${x.action} · ${x.name||"System"}`,detail:`${x.entity} · ${showTime(x.created_at)}${x.details?` · ${x.details}`:""}`}))}/></details>)}{!auditGroups.length&&<Empty>No audit entries for this selection.</Empty>}
+        <Panel title="Audit by employee" aside={<div className="field audit-filter"><label htmlFor="audit-employee">Employee</label><select id="audit-employee" value={auditEmployee} onChange={e => setAuditEmployee(e.target.value)}><option value="all">All employees and company activity</option>{(data.employees || []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select></div>}>
+          {auditGroups.map(([name, rows]) => <details className="audit-group" key={name} open={auditEmployee !== "all"}><summary><b>{name}</b><Pill>{rows.length} entries</Pill></summary><EventList rows={rows.map(x => ({ title: `${x.action} · ${x.name || "System"}`, detail: `${x.entity} · ${showTime(x.created_at)}${x.details ? ` · ${x.details}` : ""}` }))} /></details>)}{!auditGroups.length && <Empty>No audit entries for this selection.</Empty>}
         </Panel>
       </>
     );
@@ -2380,16 +2516,471 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
       </Panel>
       <Panel title="First administrator"><p>Initial Super Admin provisioning is performed once from the server terminal with the interactive command <code>npm run provision:admin</code>. It does not use a browser setup page or a startup token.</p></Panel>
     </>;
+  if (page === "Companies") {
+    const rawCompanies = data.companies || [];
+    const filteredCompanies = rawCompanies.filter((c) => {
+      const matchQuery = !companyFilterQuery ||
+        c.name.toLowerCase().includes(companyFilterQuery.toLowerCase()) ||
+        c.slug.toLowerCase().includes(companyFilterQuery.toLowerCase()) ||
+        (c.code && c.code.toLowerCase().includes(companyFilterQuery.toLowerCase())) ||
+        (c.domain && c.domain.toLowerCase().includes(companyFilterQuery.toLowerCase())) ||
+        (c.contact_email && c.contact_email.toLowerCase().includes(companyFilterQuery.toLowerCase()));
+      const matchStatus = companyStatusFilter === "All" ||
+        (companyStatusFilter === "Active" && c.active) ||
+        (companyStatusFilter === "Disabled" && !c.active);
+      return matchQuery && matchStatus;
+    });
+
+    const totalCompanies = rawCompanies.length;
+    const activeCompanies = rawCompanies.filter((c) => c.active).length;
+    const totalAdmins = rawCompanies.reduce((sum, c) => sum + Number(c.admin_count || 0), 0);
+    const totalEmployees = rawCompanies.reduce((sum, c) => sum + Number(c.employee_count || 0), 0);
+
+    return (
+      <>
+        <Header
+          tag="PLATFORM ADMINISTRATION"
+          title="Companies & Multi-Tenant Management"
+          description="Create client companies, view operational metrics, manage company status, and provision Company Administrator credentials."
+        >
+          <Button primary onClick={() => setCompanyModalOpen(true)}>＋ Add Company</Button>
+        </Header>
+
+        <div className="cards">
+          <Stat label="Total Companies" value={totalCompanies} detail="Registered on platform" icon="🏢" />
+          <Stat label="Active Companies" value={activeCompanies} detail="Enabled workspaces" icon="✓" />
+          <Stat label="Total Admins" value={totalAdmins} detail="Company administrators" icon="♙" />
+          <Stat label="Total Employees" value={totalEmployees} detail="Platform-wide workforce" icon="👥" />
+        </div>
+
+        {result && typeof result === "object" && (
+          <Panel title={result.provisioned ? "Company Admin Credentials Created" : result.accepted ? "Company Admin Invitation Sent" : "Admin Invitation Link Generated"}>
+            <div className={`invite-result ${result.accepted || result.provisioned ? "success" : "pending"}`}>
+              <div>
+                <b>{result.provisioned ? "Admin Account Ready for Immediate Login" : result.accepted ? "Email Delivered to Mail Server" : "Admin Login Credential Activation Link"}</b>
+                <span>
+                  {result.provisioned
+                    ? `Admin account created for ${result.email}. The company administrator can now sign in at the login page using email "${result.email}" and the password you assigned.`
+                    : result.accepted
+                      ? `The invitation email was accepted by SMTP for ${result.email}. They can set their password using the link.`
+                      : "Share this one-time secure activation link with the Company Admin so they can set their password and log in:"}
+                </span>
+              </div>
+              {result.password && (
+                <div style={{ marginTop: "10px", padding: "10px 14px", background: "var(--surface-hover)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                  <div><b>Login Email:</b> <code>{result.email}</code></div>
+                  <div style={{ marginTop: "4px" }}><b>Password:</b> <code>{result.password}</code></div>
+                </div>
+              )}
+              {result.activationUrl && (
+                <div className="copy-link">
+                  <input aria-label="Company Admin activation link" readOnly value={result.activationUrl} onFocus={(e) => e.target.select()} />
+                  <Button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(result.activationUrl);
+                        toast("Admin activation link copied to clipboard.");
+                      } catch {
+                        toast("Select the activation link and copy it manually.");
+                      }
+                    }}
+                  >
+                    Copy Link
+                  </Button>
+                </div>
+              )}
+              {result.expiresInDays && <small>Link expires in {result.expiresInDays} days and can be used once to activate their Admin account.</small>}
+            </div>
+          </Panel>
+        )}
+
+        <Panel
+          title="Organizations directory"
+          aside={
+            <div className="toolbar" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <input
+                type="search"
+                placeholder="Search by company, slug, domain..."
+                value={companyFilterQuery}
+                onChange={(e) => setCompanyFilterQuery(e.target.value)}
+                style={{ minWidth: "240px" }}
+              />
+              <select value={companyStatusFilter} onChange={(e) => setCompanyStatusFilter(e.target.value)}>
+                <option value="All">All statuses</option>
+                <option value="Active">Active only</option>
+                <option value="Disabled">Disabled only</option>
+              </select>
+            </div>
+          }
+        >
+          <div className="table-responsive">
+            <DataTable
+              columns={[
+                "Company",
+                "Code / Domain",
+                "Contact",
+                "Administrators",
+                "Employees",
+                "Status",
+                "Actions",
+              ]}
+              empty="No companies found matching criteria."
+            >
+              {filteredCompanies.map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    <b>{c.name}</b>
+                    <br />
+                    <small className="muted">{c.slug}</small>
+                    {c.address && <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>📍 {c.address}</div>}
+                  </td>
+                  <td>
+                    <div><code>{c.code || "—"}</code></div>
+                    {c.domain && <small className="muted">🌐 {c.domain}</small>}
+                  </td>
+                  <td>
+                    <div>{c.contact_email ? <a href={`mailto:${c.contact_email}`}>{c.contact_email}</a> : "—"}</div>
+                    {c.phone && <small className="muted">📞 {c.phone}</small>}
+                  </td>
+                  <td>
+                    <div>
+                      <Pill tone={c.admin_count > 0 ? "blue" : "amber"}>
+                        {c.admin_count} {c.admin_count === 1 ? "Admin" : "Admins"}
+                      </Pill>
+                    </div>
+                    {c.primary_admin_email && (
+                      <small className="muted" title={c.primary_admin_email}>
+                        👤 {c.primary_admin_name || c.primary_admin_email}
+                      </small>
+                    )}
+                  </td>
+                  <td>
+                    <b>{c.employee_count}</b> <span className="muted">employees</span>
+                  </td>
+                  <td>
+                    <Pill tone={c.active ? "green" : "red"}>
+                      {c.active ? "Active" : "Disabled"}
+                    </Pill>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <Button
+                        onClick={() => {
+                          setAdminInviteTarget(c);
+                          setAdminInviteDraft({
+                            name: "",
+                            email: "",
+                            title: "Company Administrator",
+                            department: "Management",
+                          });
+                          setAdminInviteModalOpen(true);
+                        }}
+                      >
+                        ＋ Invite Admin
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          const actionVerb = c.active ? "Disable" : "Enable";
+                          if (!confirm(`Are you sure you want to ${actionVerb.toLowerCase()} ${c.name}?`)) return;
+                          try {
+                            await api(`/api/super/companies/${c.id}`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ active: !c.active }),
+                            });
+                            toast(`Company ${c.name} ${c.active ? "disabled" : "activated"}.`);
+                            await reload();
+                          } catch (err) {
+                            toast(err.message);
+                          }
+                        }}
+                      >
+                        {c.active ? "Disable" : "Enable"}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          </div>
+        </Panel>
+
+        {companyModalOpen && (
+          <div className="modal-backdrop">
+            <section className="modal" role="dialog" aria-modal="true" style={{ maxWidth: "640px" }}>
+              <h2>Create New Company</h2>
+              <p>Register a new client company on the platform and set up the Company Administrator login credentials.</p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setBusyForm("create-company");
+                  try {
+                    const res = await api("/api/super/companies", {
+                      method: "POST",
+                      body: JSON.stringify(companyDraft),
+                    });
+                    setCompanyModalOpen(false);
+                    const createdAdminPassword = companyDraft.admin_password;
+                    setCompanyDraft({ name: "", slug: "", code: "", domain: "", contact_email: "", phone: "", address: "", admin_name: "", admin_email: "", admin_password: "" });
+                    toast(`Company "${res.company.name}" created successfully!`);
+                    if (res.adminProvisioned) {
+                      setResult({
+                        provisioned: true,
+                        email: res.adminProvisioned.email,
+                        password: createdAdminPassword,
+                      });
+                    } else if (res.adminInvite) {
+                      setResult({
+                        accepted: res.adminInvite.accepted,
+                        email: res.adminInvite.email,
+                        activationUrl: res.adminInvite.activationUrl,
+                        expiresInDays: 7,
+                      });
+                    }
+                    await reload();
+                  } catch (err) {
+                    toast(err.message);
+                  } finally {
+                    setBusyForm("");
+                  }
+                }}
+              >
+                <div className="form-grid">
+                  <div className="field full">
+                    <label htmlFor="comp-name">Company Name *</label>
+                    <input
+                      id="comp-name"
+                      required
+                      value={companyDraft.name}
+                      placeholder="e.g. Acme Corporation"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const autoSlug = val.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+                        setCompanyDraft((d) => ({ ...d, name: val, slug: d.slug ? d.slug : autoSlug }));
+                      }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="comp-slug">Workspace Identifier / Slug *</label>
+                    <input
+                      id="comp-slug"
+                      required
+                      value={companyDraft.slug}
+                      placeholder="e.g. acme-corp"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, slug: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="comp-code">Short Code</label>
+                    <input
+                      id="comp-code"
+                      value={companyDraft.code}
+                      placeholder="e.g. ACME"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, code: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="comp-domain">Primary Domain</label>
+                    <input
+                      id="comp-domain"
+                      value={companyDraft.domain}
+                      placeholder="e.g. acme.com"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, domain: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="comp-phone">Official Phone</label>
+                    <input
+                      id="comp-phone"
+                      value={companyDraft.phone}
+                      placeholder="e.g. +91 9876543210"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="field full">
+                    <label htmlFor="comp-contact-email">Company Contact Email</label>
+                    <input
+                      id="comp-contact-email"
+                      type="email"
+                      value={companyDraft.contact_email}
+                      placeholder="e.g. contact@acme.com"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, contact_email: e.target.value })}
+                    />
+                  </div>
+                  <div className="field full">
+                    <label htmlFor="comp-address">Office Address</label>
+                    <textarea
+                      id="comp-address"
+                      rows="2"
+                      value={companyDraft.address}
+                      placeholder="e.g. 101 Innovation Park, Cyber City, Bangalore"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, address: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="field full" style={{ marginTop: "12px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
+                    <h3 style={{ fontSize: "14px", margin: "0 0 4px 0", color: "var(--brand-dark)" }}>Initial Company Administrator Credentials</h3>
+                    <p style={{ margin: "0 0 10px 0", fontSize: "12px", color: "var(--muted)" }}>
+                      Super Admin can provide an initial password for immediate login, or leave password blank to send a secure activation link.
+                    </p>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="comp-admin-name">Admin Full Name</label>
+                    <input
+                      id="comp-admin-name"
+                      value={companyDraft.admin_name}
+                      placeholder="e.g. Rahul Sharma"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, admin_name: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="comp-admin-email">Admin Login Email</label>
+                    <input
+                      id="comp-admin-email"
+                      type="email"
+                      value={companyDraft.admin_email}
+                      placeholder="e.g. rahul@acme.com"
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, admin_email: e.target.value })}
+                    />
+                  </div>
+                  <div className="field full">
+                    <label htmlFor="comp-admin-password">Admin Password (Optional)</label>
+                    <input
+                      id="comp-admin-password"
+                      type="password"
+                      value={companyDraft.admin_password}
+                      placeholder="Set password for instant login, or leave empty for activation invite"
+                      minLength={8}
+                      onChange={(e) => setCompanyDraft({ ...companyDraft, admin_password: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="modal-actions" style={{ marginTop: "20px" }}>
+                  <Button type="button" onClick={() => setCompanyModalOpen(false)}>Cancel</Button>
+                  <Button primary disabled={busyForm === "create-company"}>
+                    {busyForm === "create-company" ? "Creating Company…" : "Create Company & Credentials"}
+                  </Button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+
+        {adminInviteModalOpen && adminInviteTarget && (
+          <div className="modal-backdrop">
+            <section className="modal" role="dialog" aria-modal="true" style={{ maxWidth: "520px" }}>
+              <h2>Provision Company Administrator</h2>
+              <p>Issue new Admin login credentials for <b>{adminInviteTarget.name}</b>. You can set a password directly or send an activation invite.</p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setBusyForm("invite-admin");
+                  try {
+                    const res = await api(`/api/super/companies/${adminInviteTarget.id}/invite-admin`, {
+                      method: "POST",
+                      body: JSON.stringify(adminInviteDraft),
+                    });
+                    setAdminInviteModalOpen(false);
+                    const createdPwd = adminInviteDraft.password;
+                    if (res.provisioned) {
+                      setResult({
+                        provisioned: true,
+                        email: res.email,
+                        password: createdPwd,
+                      });
+                      toast(`Admin account ready for ${res.email}`);
+                    } else {
+                      setResult({
+                        accepted: res.accepted,
+                        email: res.email,
+                        activationUrl: res.activationUrl,
+                        expiresInDays: 7,
+                      });
+                      toast(`Admin invitation generated for ${res.email}`);
+                    }
+                    await reload();
+                  } catch (err) {
+                    toast(err.message);
+                  } finally {
+                    setBusyForm("");
+                  }
+                }}
+              >
+                <div className="form-grid">
+                  <div className="field full">
+                    <label htmlFor="admin-name">Admin Full Name *</label>
+                    <input
+                      id="admin-name"
+                      required
+                      value={adminInviteDraft.name}
+                      placeholder="e.g. Anjali Verma"
+                      onChange={(e) => setAdminInviteDraft({ ...adminInviteDraft, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="field full">
+                    <label htmlFor="admin-email">Admin Work Email *</label>
+                    <input
+                      id="admin-email"
+                      required
+                      type="email"
+                      value={adminInviteDraft.email}
+                      placeholder="e.g. anjali@acme.com"
+                      onChange={(e) => setAdminInviteDraft({ ...adminInviteDraft, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="field full">
+                    <label htmlFor="admin-password">Admin Password (Optional)</label>
+                    <input
+                      id="admin-password"
+                      type="password"
+                      value={adminInviteDraft.password || ""}
+                      placeholder="Set password for instant login, or leave blank to send invite"
+                      minLength={8}
+                      onChange={(e) => setAdminInviteDraft({ ...adminInviteDraft, password: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="admin-title">Designation</label>
+                    <input
+                      id="admin-title"
+                      value={adminInviteDraft.title}
+                      placeholder="e.g. Operations Director"
+                      onChange={(e) => setAdminInviteDraft({ ...adminInviteDraft, title: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="admin-dept">Department</label>
+                    <input
+                      id="admin-dept"
+                      value={adminInviteDraft.department}
+                      placeholder="e.g. Leadership"
+                      onChange={(e) => setAdminInviteDraft({ ...adminInviteDraft, department: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="modal-actions" style={{ marginTop: "20px" }}>
+                  <Button type="button" onClick={() => setAdminInviteModalOpen(false)}>Cancel</Button>
+                  <Button primary disabled={busyForm === "invite-admin"}>
+                    {busyForm === "invite-admin" ? "Processing…" : "Save Admin Credentials"}
+                  </Button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+      </>
+    );
+  }
   if (page === "My attendance") {
     const current = data.attendance.find((x) => x.work_date === today());
-    const attendanceYear=month.getFullYear(),attendanceMonth=month.getMonth(),firstWeekday=new Date(attendanceYear,attendanceMonth,1).getDay();
-    const attendanceCalendar=Array.from({length:42},(_,i)=>{const d=new Date(attendanceYear,attendanceMonth,1-firstWeekday+i),key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,record=data.attendance.find(x=>x.work_date===key),holiday=(data.calendarEvents||[]).find(x=>x.kind==="holiday"&&key>=x.start_date&&key<=(x.end_date||x.start_date));return {d,key,record,holiday}});
-    const selectedAttendance=data.attendance.find(x=>x.work_date===selectedDate);
-    const selectedDay=new Date(`${selectedDate}T12:00:00`), selectedWeekend=[0,6].includes(selectedDay.getDay()), selectedHoliday=(data.calendarEvents||[]).find(x=>x.kind==="holiday"&&selectedDate>=x.start_date&&selectedDate<=(x.end_date||x.start_date)), selectedObservance=indiaObservance(selectedDate);
-    const segments=selectedAttendance?JSON.parse(selectedAttendance.segments||"[]"):[];
-    const firstStart=segments.find(x=>x.start)?.start, lastEnd=[...segments].reverse().find(x=>x.end)?.end;
-    const istMinutes=value=>{if(!value)return null;const parts=Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(value)).map(x=>[x.type,x.value]));return Number(parts.hour)*60+Number(parts.minute)};
-    const lateMinutes=Math.max(0,(istMinutes(firstStart)??610)-610);
+    const attendanceYear = month.getFullYear(), attendanceMonth = month.getMonth(), firstWeekday = new Date(attendanceYear, attendanceMonth, 1).getDay();
+    const attendanceCalendar = Array.from({ length: 42 }, (_, i) => { const d = new Date(attendanceYear, attendanceMonth, 1 - firstWeekday + i), key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`, record = data.attendance.find(x => x.work_date === key), holiday = (data.calendarEvents || []).find(x => x.kind === "holiday" && key >= x.start_date && key <= (x.end_date || x.start_date)); return { d, key, record, holiday } });
+    const selectedAttendance = data.attendance.find(x => x.work_date === selectedDate);
+    const selectedDay = new Date(`${selectedDate}T12:00:00`), selectedWeekend = [0, 6].includes(selectedDay.getDay()), selectedHoliday = (data.calendarEvents || []).find(x => x.kind === "holiday" && selectedDate >= x.start_date && selectedDate <= (x.end_date || x.start_date)), selectedObservance = indiaObservance(selectedDate);
+    const segments = selectedAttendance ? JSON.parse(selectedAttendance.segments || "[]") : [];
+    const firstStart = segments.find(x => x.start)?.start, lastEnd = [...segments].reverse().find(x => x.end)?.end;
+    const istMinutes = value => { if (!value) return null; const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value)).map(x => [x.type, x.value])); return Number(parts.hour) * 60 + Number(parts.minute) };
+    const lateMinutes = Math.max(0, (istMinutes(firstStart) ?? 610) - 610);
     return (
       <>
         <Header
@@ -2418,12 +3009,12 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
             </Button>
           </div>
         </Panel>
-        <Panel title="Monthly attendance" aside={<div className="calendar-controls"><Button onClick={()=>setMonth(new Date(attendanceYear,attendanceMonth-1,1))}>‹</Button><b>{month.toLocaleDateString("en-IN",{month:"long",year:"numeric"})}</b><Button onClick={()=>setMonth(new Date(attendanceYear,attendanceMonth+1,1))}>›</Button></div>}>
-          <div className="attendance-split"><div className="attendance-calendar"><div className="attendance-weekdays">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=><b key={x}>{x}</b>)}</div><div className="attendance-month-grid">{attendanceCalendar.map(({d,key,record,holiday})=><button type="button" key={key} onClick={()=>setSelectedDate(key)} className={`attendance-day${d.getMonth()!==attendanceMonth?" outside":""}${key===today()?" today":""}${key===selectedDate?" selected":""}${record?` ${record.status}`:""}${holiday?" company-holiday":""}${[0,6].includes(d.getDay())?" weekend":""}`} aria-label={`${key}${record?", attendance recorded":""}${holiday?`, ${holiday.title}`:""}`}><b>{d.getDate()}</b>{(record||holiday||indiaObservance(key))&&<i title={record?"Attendance recorded":holiday?.title||indiaObservance(key)}/>}</button>)}</div><div className="attendance-legend"><span><i className="worked"/> Attendance</span><span><i className="holiday"/> Company holiday · paid</span><span><i className="off"/> Weekend · paid off</span></div></div>
-          <aside className="attendance-day-rail"><div className="attendance-rail-date"><small>SELECTED DAY</small><b>{selectedDay.toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"})}</b><span>{selectedDay.toLocaleDateString("en-IN",{year:"numeric"})}</span></div><div className="attendance-rail-status"><Pill tone={selectedAttendance?.status==="in"?"green":selectedAttendance?"blue":selectedWeekend||selectedHoliday?"green":""}>{selectedAttendance?.status==="in"?"On shift":selectedAttendance?"Shift recorded":selectedHoliday?"Paid company holiday":selectedWeekend?"Weekend · paid off":"No shift recorded"}</Pill></div>
-          {selectedHoliday&&<div className="attendance-note holiday-note"><b>☼ {selectedHoliday.title}</b><small>{selectedHoliday.description||"Paid company holiday for all employees."}</small></div>}{!selectedHoliday&&selectedWeekend&&<div className="attendance-note"><b>Rest day</b><small>Saturday and Sunday are paid days off and do not use leave balance.</small></div>}{selectedObservance&&<div className="attendance-note observance-note"><b>✦ {selectedObservance}</b><small>India / international observance · information only</small></div>}
-          {selectedAttendance?<><div className="attendance-rail-metrics"><div><small>TIME WORKED</small><b>{elapsed(selectedAttendance)}</b></div><div><small>SHIFT START</small><b>{firstStart?new Date(firstStart).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit"}):"—"}</b></div><div><small>SHIFT END</small><b>{lastEnd?new Date(lastEnd).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit"}):"In progress"}</b></div></div>{lateMinutes>0&&<div className="attendance-metric-flag late">Late arrival · {lateMinutes} min</div>}<div className="attendance-segments"><b>Shift segments</b>{segments.map((s,i)=><small key={`${s.start}-${i}`}>{new Date(s.start).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit"})} → {s.end?new Date(s.end).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit"}):"In progress"}</small>)}<small>Breaks · Lunch 1:00–1:45 PM · Tea 4:00–4:15 PM</small></div></>:<div className="attendance-empty-shift"><b>{selectedHoliday?"Enjoy your holiday.":selectedWeekend?"Enjoy your time off.":"No shift record for this date."}</b><small>Shift records and totals appear here after clock-in.</small></div>}
-          <div className="attendance-shift-info"><b>Standard shift</b><span>10:00 AM – 7:00 PM IST</span><small>10-minute clock-in grace · late time starts at 10:11 AM</small></div></aside></div>
+        <Panel title="Monthly attendance" aside={<div className="calendar-controls"><Button onClick={() => setMonth(new Date(attendanceYear, attendanceMonth - 1, 1))}>‹</Button><b>{month.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</b><Button onClick={() => setMonth(new Date(attendanceYear, attendanceMonth + 1, 1))}>›</Button></div>}>
+          <div className="attendance-split"><div className="attendance-calendar"><div className="attendance-weekdays">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(x => <b key={x}>{x}</b>)}</div><div className="attendance-month-grid">{attendanceCalendar.map(({ d, key, record, holiday }) => <button type="button" key={key} onClick={() => setSelectedDate(key)} className={`attendance-day${d.getMonth() !== attendanceMonth ? " outside" : ""}${key === today() ? " today" : ""}${key === selectedDate ? " selected" : ""}${record ? ` ${record.status}` : ""}${holiday ? " company-holiday" : ""}${[0, 6].includes(d.getDay()) ? " weekend" : ""}`} aria-label={`${key}${record ? ", attendance recorded" : ""}${holiday ? `, ${holiday.title}` : ""}`}><b>{d.getDate()}</b>{(record || holiday || indiaObservance(key)) && <i title={record ? "Attendance recorded" : holiday?.title || indiaObservance(key)} />}</button>)}</div><div className="attendance-legend"><span><i className="worked" /> Attendance</span><span><i className="holiday" /> Company holiday · paid</span><span><i className="off" /> Weekend · paid off</span></div></div>
+            <aside className="attendance-day-rail"><div className="attendance-rail-date"><small>SELECTED DAY</small><b>{selectedDay.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</b><span>{selectedDay.toLocaleDateString("en-IN", { year: "numeric" })}</span></div><div className="attendance-rail-status"><Pill tone={selectedAttendance?.status === "in" ? "green" : selectedAttendance ? "blue" : selectedWeekend || selectedHoliday ? "green" : ""}>{selectedAttendance?.status === "in" ? "On shift" : selectedAttendance ? "Shift recorded" : selectedHoliday ? "Paid company holiday" : selectedWeekend ? "Weekend · paid off" : "No shift recorded"}</Pill></div>
+              {selectedHoliday && <div className="attendance-note holiday-note"><b>☼ {selectedHoliday.title}</b><small>{selectedHoliday.description || "Paid company holiday for all employees."}</small></div>}{!selectedHoliday && selectedWeekend && <div className="attendance-note"><b>Rest day</b><small>Saturday and Sunday are paid days off and do not use leave balance.</small></div>}{selectedObservance && <div className="attendance-note observance-note"><b>✦ {selectedObservance}</b><small>India / international observance · information only</small></div>}
+              {selectedAttendance ? <><div className="attendance-rail-metrics"><div><small>TIME WORKED</small><b>{elapsed(selectedAttendance)}</b></div><div><small>SHIFT START</small><b>{firstStart ? new Date(firstStart).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" }) : "—"}</b></div><div><small>SHIFT END</small><b>{lastEnd ? new Date(lastEnd).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" }) : "In progress"}</b></div></div>{lateMinutes > 0 && <div className="attendance-metric-flag late">Late arrival · {lateMinutes} min</div>}<div className="attendance-segments"><b>Shift segments</b>{segments.map((s, i) => <small key={`${s.start}-${i}`}>{new Date(s.start).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} → {s.end ? new Date(s.end).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" }) : "In progress"}</small>)}<small>Breaks · Lunch 1:00–1:45 PM · Tea 4:00–4:15 PM</small></div></> : <div className="attendance-empty-shift"><b>{selectedHoliday ? "Enjoy your holiday." : selectedWeekend ? "Enjoy your time off." : "No shift record for this date."}</b><small>Shift records and totals appear here after clock-in.</small></div>}
+              <div className="attendance-shift-info"><b>Standard shift</b><span>10:00 AM – 7:00 PM IST</span><small>10-minute clock-in grace · late time starts at 10:11 AM</small></div></aside></div>
         </Panel>
         <Panel title="Shift records">
           <DataTable columns={["Date", "Segments", "Status"]}>
@@ -2445,8 +3036,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
       </>
     );
   }
-  if (page === "My leave & requests")
-  {
+  if (page === "My leave & requests") {
     const leaveSummary = leaveDateSummary(leaveRange.start, leaveRange.end, data.calendarEvents || []);
     return (
       <>
@@ -2474,9 +3064,9 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
               label="Leave rule"
               options={data.rules.map((x) => [x.name, x.name])}
             />
-            <div className="field"><label htmlFor="leave-start">From</label><input id="leave-start" name="start_date" type="date" value={leaveRange.start} onChange={e=>setLeaveRange(v=>({...v,start:e.target.value}))}/></div>
-            <div className="field"><label htmlFor="leave-end">To</label><input id="leave-end" name="end_date" type="date" value={leaveRange.end} onChange={e=>setLeaveRange(v=>({...v,end:e.target.value}))}/></div>
-          <div className="field full leave-preview"><b>Leave day estimate</b><span>{leaveSummary.eligible} eligible working day{leaveSummary.eligible===1?"":"s"}</span><small>{leaveSummary.weekends} weekend day{leaveSummary.weekends===1?"":"s"} and {leaveSummary.holidays} configured holiday{leaveSummary.holidays===1?"":"s"} will not count as leave. Admin can manage company holidays in Calendar.</small></div>
+            <div className="field"><label htmlFor="leave-start">From</label><input id="leave-start" name="start_date" type="date" value={leaveRange.start} onChange={e => setLeaveRange(v => ({ ...v, start: e.target.value }))} /></div>
+            <div className="field"><label htmlFor="leave-end">To</label><input id="leave-end" name="end_date" type="date" value={leaveRange.end} onChange={e => setLeaveRange(v => ({ ...v, end: e.target.value }))} /></div>
+            <div className="field full leave-preview"><b>Leave day estimate</b><span>{leaveSummary.eligible} eligible working day{leaveSummary.eligible === 1 ? "" : "s"}</span><small>{leaveSummary.weekends} weekend day{leaveSummary.weekends === 1 ? "" : "s"} and {leaveSummary.holidays} configured holiday{leaveSummary.holidays === 1 ? "" : "s"} will not count as leave. Admin can manage company holidays in Calendar.</small></div>
             <div className="field full">
               <label htmlFor="details">Reason / details</label>
               <textarea id="details" name="details" required />
@@ -2522,7 +3112,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
           title="My profile"
           description="A fuller introduction helps your teammates know the person behind the work. Keep your bio and contact details up to date."
         />
-        <section className="employee-bio-hero">{(avatarData===null?data.profile.avatar_data:avatarData)?<img src={avatarData===null?data.profile.avatar_data:avatarData} alt="Your profile"/>:<div className="avatar-placeholder">{data.profile.name.split(/\s+/).map(x=>x[0]).slice(0,2).join("")}</div>}<div><span className="eyebrow">YOUR MACROW BIO</span><h2>{data.profile.name}</h2><p>{data.profile.title||"Team member"} · {data.profile.department||"Department"} · {data.profile.location||"Hybrid"}</p><blockquote>{data.profile.bio||"Add a few lines to introduce yourself to your teammates."}</blockquote></div></section>
+        <section className="employee-bio-hero">{(avatarData === null ? data.profile.avatar_data : avatarData) ? <img src={avatarData === null ? data.profile.avatar_data : avatarData} alt="Your profile" /> : <div className="avatar-placeholder">{data.profile.name.split(/\s+/).map(x => x[0]).slice(0, 2).join("")}</div>}<div><span className="eyebrow">YOUR MACROW BIO</span><h2>{data.profile.name}</h2><p>{data.profile.title || "Team member"} · {data.profile.department || "Department"} · {data.profile.location || "Hybrid"}</p><blockquote>{data.profile.bio || "Add a few lines to introduce yourself to your teammates."}</blockquote></div></section>
         <Panel
           title="Your profile & bio"
         >
@@ -2530,10 +3120,10 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
             {data.profile.employee_code || "Employee ID pending"} · {data.profile.department} · {data.profile.location} · Joined {data.profile.start_date || "—"}
           </p>
           <form key={`${data.profile.user_id}:${data.profile.profile_updated_at || ""}`} data-form="profile" className="form-grid" onSubmit={saveForm}>
-            <input type="hidden" name="avatar_data" value={avatarData===null?data.profile.avatar_data||"":avatarData}/>
-            <div className="field"><label htmlFor="my-avatar-file">Profile image</label><input id="my-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;try{setAvatarData(await resizedImageData(f))}catch(err){setFormError(err.message)}}}/><small>Optional · PNG, JPEG, or WebP. Visible to authorized Macrow People users only.</small>{(avatarData===null?data.profile.avatar_data:avatarData)&&<Button type="button" onClick={()=>setAvatarData("")}>Remove current photo</Button>}</div>
-            <Field name="pronouns" label="Pronouns" required={false} defaultValue={data.profile.pronouns||""}/>
-            <div className="field full"><label htmlFor="my-bio">About me</label><textarea id="my-bio" name="bio" maxLength="2000" defaultValue={data.profile.bio||""} placeholder="Share a short introduction, what you enjoy working on, or how teammates can collaborate with you."/></div>
+            <input type="hidden" name="avatar_data" value={avatarData === null ? data.profile.avatar_data || "" : avatarData} />
+            <div className="field"><label htmlFor="my-avatar-file">Profile image</label><input id="my-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { setAvatarData(await resizedImageData(f)) } catch (err) { setFormError(err.message) } }} /><small>Optional · PNG, JPEG, or WebP. Visible to authorized Macrow People users only.</small>{(avatarData === null ? data.profile.avatar_data : avatarData) && <Button type="button" onClick={() => setAvatarData("")}>Remove current photo</Button>}</div>
+            <Field name="pronouns" label="Pronouns" required={false} defaultValue={data.profile.pronouns || ""} />
+            <div className="field full"><label htmlFor="my-bio">About me</label><textarea id="my-bio" name="bio" maxLength="2000" defaultValue={data.profile.bio || ""} placeholder="Share a short introduction, what you enjoy working on, or how teammates can collaborate with you." /></div>
             <Field
               name="phone"
               label="Phone"
@@ -2549,12 +3139,12 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
             />
             <Field name="address" label="Residential address" required={false} defaultValue={data.profile.address ?? ""} />
             <Field name="date_of_birth" label="Date of birth" type="date" required={false} defaultValue={data.profile.date_of_birth ?? ""} />
-            <Field name="linkedin_url" label="LinkedIn URL" required={false} defaultValue={data.profile.linkedin_url||""}/>
-            <Field name="website_url" label="Website or portfolio" required={false} defaultValue={data.profile.website_url||""}/>
-            <Field name="interests" label="Interests" required={false} defaultValue={data.profile.interests||""}/>
-            <Field name="skills" label="Skills (comma separated)" required={false} defaultValue={(data.profile.skills||[]).join(", ")}/>
-            <Field name="certifications" label="Certifications (comma separated)" required={false} defaultValue={(data.profile.certifications||[]).join(", ")}/>
-            <div className="field full"><label htmlFor="my-responsibilities">Responsibilities</label><textarea id="my-responsibilities" name="responsibilities" maxLength="3000" defaultValue={data.profile.responsibilities||""}/></div>
+            <Field name="linkedin_url" label="LinkedIn URL" required={false} defaultValue={data.profile.linkedin_url || ""} />
+            <Field name="website_url" label="Website or portfolio" required={false} defaultValue={data.profile.website_url || ""} />
+            <Field name="interests" label="Interests" required={false} defaultValue={data.profile.interests || ""} />
+            <Field name="skills" label="Skills (comma separated)" required={false} defaultValue={(data.profile.skills || []).join(", ")} />
+            <Field name="certifications" label="Certifications (comma separated)" required={false} defaultValue={(data.profile.certifications || []).join(", ")} />
+            <div className="field full"><label htmlFor="my-responsibilities">Responsibilities</label><textarea id="my-responsibilities" name="responsibilities" maxLength="3000" defaultValue={data.profile.responsibilities || ""} /></div>
             <Button primary>Save contact info</Button>
             {commonFormError}
           </form>
@@ -2575,7 +3165,7 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
             <Field name="account_number_confirm" label="Confirm account number" type="password" />
             <Field name="ifsc" label="IFSC" />
             <Field name="branch_name" label="Branch name" required={false} />
-            <SelectField name="account_type" label="Account type" required={false} options={[["Savings","Savings"],["Current","Current"],["Other","Other"]]} />
+            <SelectField name="account_type" label="Account type" required={false} options={[["Savings", "Savings"], ["Current", "Current"], ["Other", "Other"]]} />
             <Field name="upi_id" label="UPI ID (optional)" required={false} />
             <div className="field full">
               <Button primary>Save encrypted bank details</Button>
@@ -2621,10 +3211,10 @@ function EmployeeOverview({ user, data, onClock, setPage, tick, toast }) {
       ><span className="date-chip"><span aria-hidden="true">✳</span>{workdayDate()}</span></Header>
       <section className="daily-quote"><span className="quote-icon" aria-hidden="true">✦</span><div><small>A THOUGHT FOR TODAY</small><p>“{quoteForToday()}”</p></div><span className="quote-sun" aria-hidden="true">☼</span></section>
       <div className="cards employee-summary">
-        <DashboardAction label="Your focus list" value={openTasks.length} detail={openTasks.length ? "Tasks ready for your attention" : "You’re all caught up on tasks"} icon="✳" onClick={()=>setPage("My tasks")} />
-        <DashboardAction label="Done and dusted" value={finishedTasks.length} detail="Tasks you’ve completed" icon="✓" onClick={()=>setPage("My tasks")} />
-        <DashboardAction label="Company notes" value={updates.length} detail={updates.length ? "Updates from your team" : "A quiet moment in the feed"} icon="✉" onClick={()=>setPage("Company updates")} />
-        <DashboardAction label="Shift status" value={status === "in" ? "In progress" : record ? "Paused" : "Not started"} detail={status === "in" ? "Your timer is running" : "Your workday, at your pace"} icon="◷" onClick={()=>setPage("My attendance")} />
+        <DashboardAction label="Your focus list" value={openTasks.length} detail={openTasks.length ? "Tasks ready for your attention" : "You’re all caught up on tasks"} icon="✳" onClick={() => setPage("My tasks")} />
+        <DashboardAction label="Done and dusted" value={finishedTasks.length} detail="Tasks you’ve completed" icon="✓" onClick={() => setPage("My tasks")} />
+        <DashboardAction label="Company notes" value={updates.length} detail={updates.length ? "Updates from your team" : "A quiet moment in the feed"} icon="✉" onClick={() => setPage("Company updates")} />
+        <DashboardAction label="Shift status" value={status === "in" ? "In progress" : record ? "Paused" : "Not started"} detail={status === "in" ? "Your timer is running" : "Your workday, at your pace"} icon="◷" onClick={() => setPage("My attendance")} />
       </div>
       <section className={`shift-hero ${status === "in" ? "is-running" : record ? "is-paused" : "is-ready"}`}>
         <div className="shift-hero-top"><span className="shift-kicker">TODAY’S SHIFT</span><span className={`shift-state ${status === "in" ? "running" : record ? "paused" : "ready"}`}><i />{shiftState}</span></div>
@@ -2642,7 +3232,7 @@ function EmployeeOverview({ user, data, onClock, setPage, tick, toast }) {
         </div>
       </section>
       <div className="grid-two employee-home-grid">
-        <Panel title="Your next moves" aside={<button className="text-link" type="button" onClick={()=>setPage("My tasks")}>See all tasks <span>→</span></button>}>
+        <Panel title="Your next moves" aside={<button className="text-link" type="button" onClick={() => setPage("My tasks")}>See all tasks <span>→</span></button>}>
           <div className="rows">
             {tasks.slice(0, 4).map((t) => (
               <div className="row" key={t.id}>
@@ -2656,7 +3246,7 @@ function EmployeeOverview({ user, data, onClock, setPage, tick, toast }) {
           </div>
           {!tasks.length && <div className="friendly-empty"><span>✳</span><b>Room to breathe.</b><small>Your new tasks will show up here when they’re ready.</small></div>}
         </Panel>
-        <Panel title="From the team" aside={<button className="text-link" type="button" onClick={()=>setPage("Company updates")}>Open feed <span>→</span></button>}>
+        <Panel title="From the team" aside={<button className="text-link" type="button" onClick={() => setPage("Company updates")}>Open feed <span>→</span></button>}>
           <div className="rows">
             {updates.slice(0, 4).map((u) => (
               <div className="row" key={u.id}>
@@ -2670,7 +3260,7 @@ function EmployeeOverview({ user, data, onClock, setPage, tick, toast }) {
           {!updates.length && <div className="friendly-empty"><span>☼</span><b>Nothing new right now.</b><small>Company updates will land here when there’s something to share.</small></div>}
         </Panel>
       </div>
-      <Panel title="Your shortcuts" aside={<span className="muted">A couple taps to the things you use most</span>}><div className="employee-shortcuts"><button type="button" onClick={()=>setPage("My daily updates")}><span>✎</span><b>Share today’s update</b><i>→</i></button><button type="button" onClick={()=>setPage("My leave & requests")}><span>☼</span><b>Ask for time off</b><i>→</i></button><button type="button" onClick={()=>setPage("Calendar")}><span>▦</span><b>See what’s coming up</b><i>→</i></button><button type="button" onClick={()=>setPage("My profile")}><span>♙</span><b>Check my details</b><i>→</i></button></div></Panel>
+      <Panel title="Your shortcuts" aside={<span className="muted">A couple taps to the things you use most</span>}><div className="employee-shortcuts"><button type="button" onClick={() => setPage("My daily updates")}><span>✎</span><b>Share today’s update</b><i>→</i></button><button type="button" onClick={() => setPage("My leave & requests")}><span>☼</span><b>Ask for time off</b><i>→</i></button><button type="button" onClick={() => setPage("Calendar")}><span>▦</span><b>See what’s coming up</b><i>→</i></button><button type="button" onClick={() => setPage("My profile")}><span>♙</span><b>Check my details</b><i>→</i></button></div></Panel>
     </>
   );
 }
@@ -2688,15 +3278,15 @@ function CalendarPage({
   const year = month.getFullYear(),
     m = month.getMonth(),
     offset = new Date(year, m, 1).getDay();
-  const selectedEvents=data.events.filter(x=>selectedDate>=x.start_date&&selectedDate<=(x.end_date||x.start_date));
-  const selectedDay=new Date(`${selectedDate}T12:00:00`), civicDay=indiaObservance(selectedDate),weekend=selectedDay.getDay()===0||selectedDay.getDay()===6;
+  const selectedEvents = data.events.filter(x => selectedDate >= x.start_date && selectedDate <= (x.end_date || x.start_date));
+  const selectedDay = new Date(`${selectedDate}T12:00:00`), civicDay = indiaObservance(selectedDate), weekend = selectedDay.getDay() === 0 || selectedDay.getDay() === 6;
   const cells = Array.from({ length: 42 }, (_, i) => {
     const d = new Date(year, m, 1 - offset + i),
       key = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Kolkata",
       }).format(d),
       events = data.events.filter(
-        (x) => key >= x.start_date && key <= (x.end_date||x.start_date),
+        (x) => key >= x.start_date && key <= (x.end_date || x.start_date),
       );
     return (
       <button
@@ -2710,7 +3300,7 @@ function CalendarPage({
             {x.title}
           </span>
         ))}
-        {!events.length&&indiaObservance(key)&&<span className="cal-observance">{indiaObservance(key)}</span>}
+        {!events.length && indiaObservance(key) && <span className="cal-observance">{indiaObservance(key)}</span>}
       </button>
     );
   });
@@ -2735,7 +3325,7 @@ function CalendarPage({
             />
             <Field name="start_date" label="From" type="date" />
             <Field name="end_date" label="To" type="date" required={false} />
-            <div className="field full"><label htmlFor="event-description">Description / details</label><textarea id="event-description" name="description" maxLength="1000" placeholder="What should employees know about this date?"/></div>
+            <div className="field full"><label htmlFor="event-description">Description / details</label><textarea id="event-description" name="description" maxLength="1000" placeholder="What should employees know about this date?" /></div>
             <Button primary>Add event</Button>
             {formError}
           </form>
@@ -2773,7 +3363,7 @@ function CalendarPage({
           ))}
           {cells}
         </div>
-        <div className="calendar-day-detail"><div className="calendar-day-date"><span>{selectedDay.toLocaleDateString("en-IN",{weekday:"long"})}</span><b>{selectedDay.toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</b><small>{weekend?"Weekend · paid off":"Working day"}</small></div><div className="calendar-day-events">{civicDay&&<article className="calendar-note civic"><span>🇮🇳</span><div><b>{civicDay}</b><small>India / international observance · informational only; not automatically a company holiday</small></div></article>}{selectedEvents.map(x=><article className={`calendar-note ${x.kind}`} key={x.id}><span>{x.kind==="holiday"?"☼":x.kind==="leave"?"◷":"✦"}</span><div><b>{x.title}</b><small>{x.description||x.kind}</small></div></article>)}{!civicDay&&!selectedEvents.length&&<Empty>No company events or public observances are listed for this date.</Empty>}</div></div>
+        <div className="calendar-day-detail"><div className="calendar-day-date"><span>{selectedDay.toLocaleDateString("en-IN", { weekday: "long" })}</span><b>{selectedDay.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</b><small>{weekend ? "Weekend · paid off" : "Working day"}</small></div><div className="calendar-day-events">{civicDay && <article className="calendar-note civic"><span>🇮🇳</span><div><b>{civicDay}</b><small>India / international observance · informational only; not automatically a company holiday</small></div></article>}{selectedEvents.map(x => <article className={`calendar-note ${x.kind}`} key={x.id}><span>{x.kind === "holiday" ? "☼" : x.kind === "leave" ? "◷" : "✦"}</span><div><b>{x.title}</b><small>{x.description || x.kind}</small></div></article>)}{!civicDay && !selectedEvents.length && <Empty>No company events or public observances are listed for this date.</Empty>}</div></div>
         <p className="help">Festival dates include the Government of India’s 2026 central holiday calendar where published. Lunar dates can vary by local sighting or regional calendar. Observances are informational; only holidays added by Admin affect leave calculations.</p>
       </Panel>
     </>
@@ -3395,15 +3985,15 @@ function PayslipBuilder({ employees = [], toast }) {
           </thead>
           <tbody>
             ${Array.from({ length: Math.max(earnings.length, deductions.length) }).map((_, i) => {
-              const eItem = earnings[i];
-              const dItem = deductions[i];
-              return `<tr>
+      const eItem = earnings[i];
+      const dItem = deductions[i];
+      return `<tr>
                 <td>${eItem ? esc(eItem.name) : ""}</td>
                 <td class="amt">${eItem ? Number(eItem.amount || 0).toLocaleString("en-IN") : ""}</td>
                 <td>${dItem ? esc(dItem.name) : ""}</td>
                 <td class="amt">${dItem ? Number(dItem.amount || 0).toLocaleString("en-IN") : ""}</td>
               </tr>`;
-            }).join("")}
+    }).join("")}
             <tr style="background:#f8fafc;font-weight:bold">
               <td>Gross Earnings</td>
               <td class="amt">₹${totalGross.toLocaleString("en-IN")}</td>
@@ -3870,7 +4460,7 @@ async function downloadPayslip(id, toast) {
             <div><b>Payment Status:</b> <span style="text-transform:capitalize;font-weight:bold;color:${p.period_status === "Paid" ? "#16a34a" : "#ca8a04"}">${esc(p.period_status)}</span> ${p.paid_at ? `(${esc(showTime(p.paid_at))})` : ""}</div>
             <div style="grid-column: span 2"><b>Attendance summary:</b> Scheduled: <b>${esc(p.scheduled_days)}</b> days · Present: <b>${esc(p.present_days)}</b> days · Paid leave: <b>${esc(p.paid_leave_days)}</b> days · Unpaid leave: <b>${esc(p.unpaid_leave_days)}</b> days</div>
           </div>
-          <h3 style="margin:18px 0 8px;color:#0f172a">CTC summary</h3><table><thead><tr><th>Component Name</th><th style="text-align:right">Amount (INR)</th></tr></thead><tbody><tr><td>Annual CTC</td><td style="text-align:right">${amount(p.calculation.annual_ctc_paise||0)}</td></tr><tr class="total"><td>Monthly CTC</td><td style="text-align:right">${amount(p.calculation.monthly_ctc_paise||0)}</td></tr></tbody></table>
+          <h3 style="margin:18px 0 8px;color:#0f172a">CTC summary</h3><table><thead><tr><th>Component Name</th><th style="text-align:right">Amount (INR)</th></tr></thead><tbody><tr><td>Annual CTC</td><td style="text-align:right">${amount(p.calculation.annual_ctc_paise || 0)}</td></tr><tr class="total"><td>Monthly CTC</td><td style="text-align:right">${amount(p.calculation.monthly_ctc_paise || 0)}</td></tr></tbody></table>
           <h3 style="margin-top:24px;margin-bottom:8px;color:#0f172a">Earnings</h3>
           <table>
             <thead><tr><th>Component</th><th style="text-align:right">Amount (INR)</th></tr></thead>

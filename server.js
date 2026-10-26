@@ -283,9 +283,9 @@ try {
     fs.chmodSync(path.join(DATA, "macrow-people.sqlite"), 0o600);
 } catch {}
 db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
-CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','employee')), password_hash TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('super_admin','admin','hr_manager','payroll_manager','manager','employee')), password_hash TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, company_id TEXT REFERENCES companies(id));
 CREATE TABLE IF NOT EXISTS employees(user_id TEXT PRIMARY KEY REFERENCES users(id), title TEXT NOT NULL DEFAULT '', department TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT 'Hybrid' CHECK(location IN ('Onsite','Remote','Hybrid')), phone TEXT NOT NULL DEFAULT '', emergency_contact TEXT NOT NULL DEFAULT '', start_date TEXT NOT NULL DEFAULT '', salary INTEGER NOT NULL DEFAULT 0, salary_currency TEXT NOT NULL DEFAULT 'INR');
-CREATE TABLE IF NOT EXISTS invites(id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, title TEXT NOT NULL, department TEXT NOT NULL, location TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id), used_at TEXT);
+CREATE TABLE IF NOT EXISTS invites(id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, title TEXT NOT NULL, department TEXT NOT NULL, location TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id), used_at TEXT, company_id TEXT REFERENCES companies(id));
 CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS attendance(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), work_date TEXT NOT NULL, segments TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'out', UNIQUE(user_id,work_date));
 CREATE TABLE IF NOT EXISTS activity_logs(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), actor_id TEXT REFERENCES users(id), action TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
@@ -334,10 +334,10 @@ function autoProvisionAdmin() {
 
   if (!adminEmail || !adminPassword) return;
 
-  const existingAdmin = q(
-    "SELECT id, email, password_hash FROM users WHERE role='admin' LIMIT 1",
+  const existingSuperAdmin = q(
+    "SELECT id, email, password_hash FROM users WHERE role='super_admin' LIMIT 1",
   );
-  if (existingAdmin) {
+  if (existingSuperAdmin) {
     if (process.env.SYNC_ADMIN_CREDENTIALS === "true") {
       const storedHash = passwordHash(adminPassword);
       run(
@@ -345,7 +345,7 @@ function autoProvisionAdmin() {
         adminEmail.toLowerCase(),
         adminName,
         storedHash,
-        existingAdmin.id,
+        existingSuperAdmin.id,
       );
       console.log(
         `[AUTH] Super Admin credentials synced for ${adminEmail.toLowerCase()}`,
@@ -365,18 +365,18 @@ function autoProvisionAdmin() {
   try {
     if (existingUser) {
       run(
-        "UPDATE users SET name=?, role='admin', password_hash=?, active=1 WHERE id=?",
+        "UPDATE users SET name=?, role='super_admin', password_hash=?, company_id=NULL, active=1 WHERE id=?",
         adminName,
         storedHash,
         uid,
       );
     } else {
       run(
-        "INSERT INTO users(id,email,name,role,password_hash,created_at) VALUES(?,?,?,?,?,?)",
+        "INSERT INTO users(id,email,name,role,password_hash,created_at,company_id) VALUES(?,?,?,?,?,?,NULL)",
         uid,
         adminEmail.toLowerCase(),
         adminName,
-        "admin",
+        "super_admin",
         storedHash,
         now(),
       );
@@ -582,9 +582,53 @@ function activity(user, actor, action, details = "") {
   );
   audit(actor, action, "attendance", user, details);
 }
+function createSession(userId, res) {
+  const token = crypto.randomBytes(32).toString("base64url"),
+    csrf = crypto.randomBytes(24).toString("base64url"),
+    created = now();
+  run(
+    "INSERT INTO sessions VALUES(?,?,?, ?,?)",
+    hash(token),
+    userId,
+    csrf,
+    new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
+    created,
+  );
+  cookie(res, token);
+  return { token, csrf };
+}
+function dateMinutes() {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date())
+      .map((x) => [x.type, x.value]),
+  );
+  return Number(p.hour) * 60 + Number(p.minute);
+}
+function addLog(userId, action, details) {
+  activity(userId, userId, action, details);
+}
+function getRequestToken(req) {
+  const authHeader = req.headers.authorization || "";
+  if (authHeader.startsWith("Bearer ")) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer) return bearer;
+  }
+  try {
+    const parsedUrl = new URL(req.url, "http://localhost");
+    const queryToken = parsedUrl.searchParams.get("token");
+    if (queryToken) return queryToken.trim();
+  } catch {}
+  const c = parseCookies(req);
+  return c["__Host-macrow_session"] || c["macrow_session"] || null;
+}
 function currentUser(req) {
-  const c = parseCookies(req),
-    token = c["__Host-macrow_session"] || c["macrow_session"];
+  const token = getRequestToken(req);
   if (!token) return null;
   const s = q(
     "SELECT user_id,csrf FROM sessions WHERE token_hash=? AND expires_at>? ",
@@ -593,7 +637,7 @@ function currentUser(req) {
   );
   if (!s) return null;
   const u = q(
-    "SELECT id,email,name,role,active FROM users WHERE id=?",
+    "SELECT id,email,name,role,active,company_id FROM users WHERE id=?",
     s.user_id,
   );
   if (!u || !u.active) return null;
@@ -683,40 +727,9 @@ function recordAttempt(emailVal, ip, success) {
 }
 function publicUser(userId) {
   return q(
-    `SELECT u.id,u.email,u.name,u.role,e.title,e.department,e.location,e.phone,e.emergency_contact,e.start_date FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=?`,
+    `SELECT u.id,u.email,u.name,u.role,u.company_id,c.name AS company_name,c.slug AS company_slug,e.title,e.department,e.location,e.phone,e.emergency_contact,e.start_date FROM users u LEFT JOIN employees e ON e.user_id=u.id LEFT JOIN companies c ON c.id=u.company_id WHERE u.id=?`,
     userId,
   );
-}
-function createSession(userId, res) {
-  const token = crypto.randomBytes(32).toString("base64url"),
-    csrf = crypto.randomBytes(24).toString("base64url"),
-    created = now();
-  run(
-    "INSERT INTO sessions VALUES(?,?,?, ?,?)",
-    hash(token),
-    userId,
-    csrf,
-    new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
-    created,
-  );
-  cookie(res, token);
-  return csrf;
-}
-function dateMinutes() {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: zone,
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(new Date())
-      .map((x) => [x.type, x.value]),
-  );
-  return Number(p.hour) * 60 + Number(p.minute);
-}
-function addLog(userId, action, details) {
-  activity(userId, userId, action, details);
 }
 async function route(req, res) {
   if (handleCors(req, res)) return;
@@ -737,8 +750,8 @@ async function route(req, res) {
     recordAttempt(em, ip, !!ok);
     if (!ok)
       return json(res, 401, { error: "Email or password is incorrect." });
-    const csrf = createSession(u.id, res);
-    return json(res, 200, { user: publicUser(u.id), csrf });
+    const { token, csrf } = createSession(u.id, res);
+    return json(res, 200, { user: publicUser(u.id), csrf, token });
   }
   if (req.method === "GET" && p === "/api/me") {
     const u = currentUser(req);
@@ -748,8 +761,7 @@ async function route(req, res) {
   if (req.method === "POST" && p === "/api/logout") {
     const u = currentUser(req);
     if (u) {
-      const c = parseCookies(req);
-      const token = c["__Host-macrow_session"] || c["macrow_session"];
+      const token = getRequestToken(req);
       if (token) run("DELETE FROM sessions WHERE token_hash=?", hash(token));
       audit(u.id, "Signed out", "session", u.id);
     }
@@ -791,37 +803,47 @@ async function route(req, res) {
         "Invite is invalid or expired. Ask your administrator to resend it.",
       );
     }
-    if (q("SELECT id FROM users WHERE lower(email)=lower(?)", inv.email))
-      fail(
-        409,
-        "This invitation has already been activated. Sign in or ask an administrator for help.",
-      );
-    const uid = id();
+    const existingUser = q("SELECT id, role FROM users WHERE lower(email)=lower(?)", inv.email);
+    const uid = existingUser ? existingUser.id : id();
     db.exec("BEGIN IMMEDIATE");
     try {
-      if (q("SELECT id FROM users WHERE lower(email)=lower(?)", inv.email))
-        fail(
-          409,
-          "This invitation has already been activated. Sign in or ask an administrator for help.",
+      if (existingUser) {
+        run(
+          "UPDATE users SET name=?, role=?, password_hash=?, company_id=COALESCE(?, company_id), active=1 WHERE id=?",
+          inv.name,
+          inv.role || "employee",
+          passwordHash(d.password),
+          inv.company_id || null,
+          uid,
         );
-      run(
-        "INSERT INTO users(id,email,name,role,password_hash,created_at) VALUES(?,?,?,?,?,?)",
-        uid,
-        inv.email,
-        inv.name,
-        inv.role || "employee",
-        passwordHash(d.password),
-        now(),
-      );
-      run(
-        "INSERT INTO employees(user_id,title,department,location,start_date,employee_code) VALUES(?,?,?,?,?,?)",
-        uid,
-        inv.title,
-        inv.department,
-        inv.location,
-        isoDate(),
-        inv.role === "admin" ? "" : nextEmployeeCode(),
-      );
+        run(
+          "UPDATE employees SET title=?, department=?, location=? WHERE user_id=?",
+          inv.title,
+          inv.department,
+          inv.location,
+          uid,
+        );
+      } else {
+        run(
+          "INSERT INTO users(id,email,name,role,password_hash,created_at,company_id) VALUES(?,?,?,?,?,?,?)",
+          uid,
+          inv.email,
+          inv.name,
+          inv.role || "employee",
+          passwordHash(d.password),
+          now(),
+          inv.company_id || null,
+        );
+        run(
+          "INSERT INTO employees(user_id,title,department,location,start_date,employee_code) VALUES(?,?,?,?,?,?)",
+          uid,
+          inv.title,
+          inv.department,
+          inv.location,
+          isoDate(),
+          inv.role === "admin" ? "" : nextEmployeeCode(),
+        );
+      }
       run("UPDATE invites SET used_at=? WHERE id=?", now(), inv.id);
       audit(inv.created_by, "Employee accepted invitation", "user", uid);
       run(
@@ -842,7 +864,7 @@ async function route(req, res) {
   let user = auth(req, res);
   if (!user) return;
   if (req.method === "POST" && p === "/api/hrm/smtp/test") {
-    if (user.role !== "admin")
+    if (!["super_admin", "admin"].includes(user.role))
       return json(res, 403, { error: "Super Admin only." });
     const correlationId = crypto.randomUUID();
     try {
@@ -886,6 +908,22 @@ async function route(req, res) {
   }
   if (await routeUpgrade(req, res, url, user, json)) return;
   if (req.method === "GET" && p === "/api/dashboard") {
+    if (user.role === "super_admin") {
+      const totalCompanies = Number(q("SELECT count(*) n FROM companies")?.n || 0);
+      const activeCompanies = Number(q("SELECT count(*) n FROM companies WHERE active=1")?.n || 0);
+      const totalAdmins = Number(q("SELECT count(*) n FROM users WHERE role='admin' AND active=1")?.n || 0);
+      const totalEmployees = Number(q("SELECT count(*) n FROM users WHERE role='employee' AND active=1")?.n || 0);
+      const recentCompanies = all("SELECT c.*, (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='admin' AND u.active=1) AS admin_count, (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='employee' AND u.active=1) AS employee_count FROM companies c ORDER BY c.created_at DESC LIMIT 5");
+      const latestAudit = all("SELECT a.action,a.details,a.created_at,u.name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 8");
+      return json(res, 200, {
+        totalCompanies,
+        activeCompanies,
+        totalAdmins,
+        totalEmployees,
+        recentCompanies,
+        latest: latestAudit,
+      });
+    }
     if (user.role === "admin") {
       return json(res, 200, {
         employees: Number(
@@ -1083,7 +1121,7 @@ async function route(req, res) {
       expires = new Date(Date.now() + 7 * 864e5).toISOString(),
       created = now();
     run(
-      "INSERT INTO invites(id,email,name,title,department,location,token_hash,expires_at,created_by,used_at,role,created_at,email_status) VALUES(?,?,?,?,?,?,?,?,?,NULL,?,?,?)",
+      "INSERT INTO invites(id,email,name,title,department,location,token_hash,expires_at,created_by,used_at,role,created_at,email_status,company_id) VALUES(?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)",
       inviteId,
       em,
       name,
@@ -1096,6 +1134,7 @@ async function route(req, res) {
       role,
       created,
       "pending",
+      user.company_id || null,
     );
     const fullInviteUrl = `${baseUrl}/accept-invite.html#${token}`;
     const correlationId = crypto.randomUUID();
@@ -1702,13 +1741,373 @@ async function route(req, res) {
     return json(res, 201, { id: doc });
   }
   if (req.method === "GET" && p === "/api/audit") {
-    if (user.role !== "admin") return json(res, 403, { error: "Admin only." });
+    if (!["super_admin", "admin"].includes(user.role)) return json(res, 403, { error: "Admin only." });
     return json(res, 200, {
       logs: all(
         "SELECT a.*,u.name,person.id AS employee_id,person.name AS employee_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users person ON person.id=CASE WHEN a.entity IN ('employee_profile','bank_account','attendance') THEN a.entity_id WHEN a.entity='request' THEN (SELECT user_id FROM requests WHERE id=a.entity_id) WHEN a.entity='task' THEN (SELECT user_id FROM tasks WHERE id=a.entity_id) WHEN a.entity='salary_structure' THEN (SELECT user_id FROM salary_structures WHERE id=a.entity_id) WHEN a.entity='employee_project' THEN (SELECT user_id FROM employee_projects WHERE id=a.entity_id) WHEN a.entity='payroll_adjustment' THEN (SELECT i.user_id FROM payroll_adjustments x JOIN payroll_items i ON i.id=x.payroll_item_id WHERE x.id=a.entity_id) ELSE NULL END ORDER BY a.created_at DESC LIMIT 500",
       ),
     });
   }
+  if (p === "/api/super/companies" && req.method === "GET") {
+    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    const companies = all(`
+      SELECT c.*,
+        (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='admin' AND u.active=1) AS admin_count,
+        (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='employee' AND u.active=1) AS employee_count,
+        (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.active=1) AS total_users,
+        (SELECT u.name FROM users u WHERE u.company_id=c.id AND u.role='admin' AND u.active=1 ORDER BY u.created_at ASC LIMIT 1) AS primary_admin_name,
+        (SELECT u.email FROM users u WHERE u.company_id=c.id AND u.role='admin' AND u.active=1 ORDER BY u.created_at ASC LIMIT 1) AS primary_admin_email
+      FROM companies c
+      ORDER BY c.created_at DESC
+    `);
+    return json(res, 200, { companies });
+  }
+
+  if (p === "/api/super/companies" && req.method === "POST") {
+    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    const d = await body(req);
+    const name = clean(d.name, 120);
+    let slug = clean(d.slug, 80).toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    if (!name) fail(400, "Company name is required.");
+    if (!slug) {
+      slug = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    }
+    if (!slug) slug = `company-${Date.now()}`;
+    if (q("SELECT id FROM companies WHERE slug=?", slug)) {
+      fail(409, "A company with this URL slug or code already exists.");
+    }
+    const code = clean(d.code, 20).toUpperCase();
+    const domain = clean(d.domain, 120).toLowerCase();
+    const contact_email = clean(d.contact_email, 120).toLowerCase();
+    const phone = clean(d.phone, 40);
+    const address = clean(d.address, 300);
+    const companyId = id();
+    const createdAt = now();
+
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      run(
+        "INSERT INTO companies(id, name, slug, code, domain, contact_email, phone, address, active, created_at) VALUES(?,?,?,?,?,?,?,?,1,?)",
+        companyId,
+        name,
+        slug,
+        code,
+        domain,
+        contact_email,
+        phone,
+        address,
+        createdAt,
+      );
+      audit(user.id, "Created company", "company", companyId, `${name} (${slug})`);
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+
+    // Optionally provision initial Company Admin credentials right away (direct password or invitation)
+    let adminInvite = null;
+    let adminProvisioned = null;
+    const adminEmailVal = clean(d.admin_email, 120).toLowerCase();
+    const adminNameVal = clean(d.admin_name, 120);
+    const adminPasswordVal = typeof d.admin_password === "string" ? d.admin_password.trim() : "";
+
+    if (adminEmailVal && /^\S+@\S+\.\S+$/.test(adminEmailVal)) {
+      if (adminPasswordVal) {
+        // Direct credential creation with set password
+        if (adminPasswordVal.length < 8) {
+          fail(400, "Admin password must be at least 8 characters.");
+        }
+        const existing = q("SELECT id, role, company_id FROM users WHERE lower(email)=lower(?)", adminEmailVal);
+        if (existing && existing.role === "super_admin") {
+          fail(409, "This email belongs to the Super Admin account.");
+        }
+        const adminUid = existing ? existing.id : id();
+        const pwdHash = passwordHash(adminPasswordVal);
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          if (existing) {
+            run(
+              "UPDATE users SET name=?, role='admin', password_hash=?, company_id=?, active=1 WHERE id=?",
+              adminNameVal || `${name} Admin`,
+              pwdHash,
+              companyId,
+              adminUid,
+            );
+          } else {
+            run(
+              "INSERT INTO users(id,email,name,role,password_hash,created_at,company_id,active) VALUES(?,?,?,'admin',?,?,?,1)",
+              adminUid,
+              adminEmailVal,
+              adminNameVal || `${name} Admin`,
+              pwdHash,
+              now(),
+              companyId,
+            );
+            run(
+              "INSERT INTO employees(user_id,title,department,location,start_date,employee_code) VALUES(?,?,?,?,?,?)",
+              adminUid,
+              "Company Administrator",
+              "Management",
+              "Hybrid",
+              isoDate(),
+              "",
+            );
+          }
+          audit(user.id, "Provisioned company admin directly", "user", adminUid, `${adminEmailVal} for ${name}`);
+          db.exec("COMMIT");
+          adminProvisioned = {
+            userId: adminUid,
+            email: adminEmailVal,
+            name: adminNameVal || `${name} Admin`,
+            role: "admin",
+          };
+        } catch (adminErr) {
+          db.exec("ROLLBACK");
+          throw adminErr;
+        }
+      } else {
+        // Generate invitation with activation link
+        try {
+          const token = crypto.randomBytes(32).toString("base64url");
+          const inviteId = id();
+          const expires = new Date(Date.now() + 7 * 864e5).toISOString();
+          run(
+            "INSERT INTO invites(id,email,name,title,department,location,token_hash,expires_at,created_by,used_at,role,created_at,email_status,company_id) VALUES(?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)",
+            inviteId,
+            adminEmailVal,
+            adminNameVal || `${name} Admin`,
+            "Administrator",
+            "Management",
+            "Hybrid",
+            hash(token),
+            expires,
+            user.id,
+            "admin",
+            now(),
+            "pending",
+            companyId,
+          );
+          const baseUrl = appBaseUrl();
+          const fullInviteUrl = `${baseUrl}/accept-invite.html#${token}`;
+          const correlationId = crypto.randomUUID();
+          const delivery = await sendInviteEmail({
+            to: adminEmailVal,
+            name: adminNameVal || `${name} Admin`,
+            inviteUrl: fullInviteUrl,
+            role: "admin",
+            title: "Company Administrator",
+            department: "Management",
+          });
+          run(
+            "UPDATE invites SET email_status=?,sent_at=?,correlation_id=?,smtp_message_id=? WHERE id=?",
+            delivery.accepted ? "sent" : "failed",
+            delivery.accepted ? delivery.sentAt : null,
+            correlationId,
+            delivery.messageId || "",
+            inviteId,
+          );
+          adminInvite = {
+            inviteId,
+            email: adminEmailVal,
+            activationUrl: fullInviteUrl,
+            accepted: delivery.accepted,
+            deliveryMode: delivery.mode,
+          };
+          audit(user.id, "Invited company admin", "invite", inviteId, `${adminEmailVal} for ${name}`);
+        } catch (inviteErr) {
+          console.error("[COMPANY_ADMIN_INVITE_ERROR]", inviteErr.message);
+        }
+      }
+    }
+
+    return json(res, 201, {
+      company: q("SELECT * FROM companies WHERE id=?", companyId),
+      adminInvite,
+      adminProvisioned,
+    });
+  }
+
+  const superCompMatch = p.match(/^\/api\/super\/companies\/([\w-]+)$/);
+  if (superCompMatch && req.method === "GET") {
+    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    const compId = superCompMatch[1];
+    const company = q("SELECT * FROM companies WHERE id=?", compId);
+    if (!company) fail(404, "Company not found.");
+    const users = all(
+      "SELECT u.id, u.email, u.name, u.role, u.active, u.created_at, e.title, e.department, e.location FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.company_id=? ORDER BY (u.role='admin') DESC, u.name ASC",
+      compId,
+    );
+    const invites = all(
+      "SELECT id, email, name, title, department, role, email_status, created_at, expires_at, used_at FROM invites WHERE company_id=? ORDER BY created_at DESC",
+      compId,
+    );
+    return json(res, 200, { company, users, invites });
+  }
+
+  if (superCompMatch && req.method === "PATCH") {
+    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    const compId = superCompMatch[1];
+    const company = q("SELECT * FROM companies WHERE id=?", compId);
+    if (!company) fail(404, "Company not found.");
+    const d = await body(req);
+    const fields = [];
+    const args = [];
+    if (d.name !== undefined) {
+      const name = clean(d.name, 120);
+      if (!name) fail(400, "Company name cannot be blank.");
+      fields.push("name=?");
+      args.push(name);
+    }
+    if (d.code !== undefined) {
+      fields.push("code=?");
+      args.push(clean(d.code, 20).toUpperCase());
+    }
+    if (d.domain !== undefined) {
+      fields.push("domain=?");
+      args.push(clean(d.domain, 120).toLowerCase());
+    }
+    if (d.contact_email !== undefined) {
+      fields.push("contact_email=?");
+      args.push(clean(d.contact_email, 120).toLowerCase());
+    }
+    if (d.phone !== undefined) {
+      fields.push("phone=?");
+      args.push(clean(d.phone, 40));
+    }
+    if (d.address !== undefined) {
+      fields.push("address=?");
+      args.push(clean(d.address, 300));
+    }
+    if (d.active !== undefined) {
+      const activeVal = d.active ? 1 : 0;
+      fields.push("active=?");
+      args.push(activeVal);
+    }
+    if (!fields.length) fail(400, "No attributes provided to update.");
+    args.push(compId);
+    run(`UPDATE companies SET ${fields.join(", ")} WHERE id=?`, ...args);
+    audit(user.id, "Updated company details", "company", compId);
+    return json(res, 200, { company: q("SELECT * FROM companies WHERE id=?", compId) });
+  }
+
+  const superInviteAdminMatch = p.match(/^\/api\/super\/companies\/([\w-]+)\/invite-admin$/);
+  if (superInviteAdminMatch && req.method === "POST") {
+    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    const compId = superInviteAdminMatch[1];
+    const company = q("SELECT * FROM companies WHERE id=?", compId);
+    if (!company) fail(404, "Company not found.");
+    const d = await body(req);
+    const adminEmailVal = email(d.email);
+    const adminNameVal = clean(d.name, 120);
+    if (!adminNameVal) fail(400, "Admin name is required.");
+    
+    // Check if user is already an admin for this exact company
+    const existingUser = q("SELECT id, role, company_id FROM users WHERE lower(email)=lower(?)", adminEmailVal);
+    if (existingUser && existingUser.role === "admin" && existingUser.company_id === compId) {
+      fail(409, "This user is already an Administrator for this company.");
+    }
+    if (existingUser && existingUser.role === "super_admin") {
+      fail(409, "This email belongs to the Super Admin account and cannot be assigned as a company admin.");
+    }
+
+    const adminPasswordVal = typeof d.password === "string" ? d.password.trim() : (typeof d.admin_password === "string" ? d.admin_password.trim() : "");
+    if (adminPasswordVal) {
+      if (adminPasswordVal.length < 8) fail(400, "Admin password must be at least 8 characters.");
+      const adminUid = existingUser ? existingUser.id : id();
+      const pwdHash = passwordHash(adminPasswordVal);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        if (existingUser) {
+          run(
+            "UPDATE users SET name=?, role='admin', password_hash=?, company_id=?, active=1 WHERE id=?",
+            adminNameVal,
+            pwdHash,
+            compId,
+            adminUid,
+          );
+        } else {
+          run(
+            "INSERT INTO users(id,email,name,role,password_hash,created_at,company_id,active) VALUES(?,?,?,'admin',?,?,?,1)",
+            adminUid,
+            adminEmailVal,
+            adminNameVal,
+            pwdHash,
+            now(),
+            compId,
+          );
+          run(
+            "INSERT INTO employees(user_id,title,department,location,start_date,employee_code) VALUES(?,?,?,?,?,?)",
+            adminUid,
+            clean(d.title, 80) || "Company Administrator",
+            clean(d.department, 80) || "Management",
+            "Hybrid",
+            isoDate(),
+            "",
+          );
+        }
+        audit(user.id, "Provisioned company administrator directly", "user", adminUid, `${adminEmailVal} for ${company.name}`);
+        db.exec("COMMIT");
+        return json(res, 201, {
+          email: adminEmailVal,
+          provisioned: true,
+          userId: adminUid,
+        });
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    }
+
+    const token = crypto.randomBytes(32).toString("base64url");
+    const inviteId = id();
+    const expires = new Date(Date.now() + 7 * 864e5).toISOString();
+    run(
+      "INSERT INTO invites(id,email,name,title,department,location,token_hash,expires_at,created_by,used_at,role,created_at,email_status,company_id) VALUES(?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)",
+      inviteId,
+      adminEmailVal,
+      adminNameVal,
+      clean(d.title, 80) || "Company Administrator",
+      clean(d.department, 80) || "Management",
+      "Hybrid",
+      hash(token),
+      expires,
+      user.id,
+      "admin",
+      now(),
+      "pending",
+      compId,
+    );
+    const baseUrl = appBaseUrl();
+    const fullInviteUrl = `${baseUrl}/accept-invite.html#${token}`;
+    const correlationId = crypto.randomUUID();
+    const delivery = await sendInviteEmail({
+      to: adminEmailVal,
+      name: adminNameVal,
+      inviteUrl: fullInviteUrl,
+      role: "admin",
+      title: clean(d.title, 80) || "Company Administrator",
+      department: "Management",
+    });
+    run(
+      "UPDATE invites SET email_status=?,sent_at=?,correlation_id=?,smtp_message_id=? WHERE id=?",
+      delivery.accepted ? "sent" : "failed",
+      delivery.accepted ? delivery.sentAt : null,
+      correlationId,
+      delivery.messageId || "",
+      inviteId,
+    );
+    audit(user.id, "Invited company administrator", "invite", inviteId, `${adminEmailVal} for ${company.name}`);
+    return json(res, 201, {
+      inviteId,
+      email: adminEmailVal,
+      activationUrl: fullInviteUrl,
+      accepted: delivery.accepted,
+      deliveryMode: delivery.mode,
+      correlationId,
+    });
+  }
+
   json(res, 404, { error: "Not found." });
 }
 const TYPES = {
