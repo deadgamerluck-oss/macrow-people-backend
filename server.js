@@ -471,7 +471,8 @@ function handleCors(req, res) {
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods":
           "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, Authorization",
+        "Access-Control-Allow-Headers":
+          "Content-Type, X-CSRF-Token, Authorization",
         "Access-Control-Max-Age": "86400",
         Vary: "Origin",
       });
@@ -479,7 +480,11 @@ function handleCors(req, res) {
       return true;
     }
     res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: `Origin '${origin}' not allowed by CORS. Set CLIENT_ORIGIN or CORS_ORIGINS to include this domain.` }));
+    res.end(
+      JSON.stringify({
+        error: `Origin '${origin}' not allowed by CORS. Set CLIENT_ORIGIN or CORS_ORIGINS to include this domain.`,
+      }),
+    );
     return true;
   }
   return false;
@@ -502,7 +507,8 @@ function json(res, status, obj, headers = {}) {
 function cookie(res, token, maxAge = 28800) {
   // Use SameSite=None and Secure=true for cross-origin frontend (e.g. Hostinger frontend -> Render API)
   // When SameSite=None, modern browsers require Secure flag.
-  const isSecureCookie = secure || process.env.RENDER || Boolean(process.env.HTTPS);
+  const isSecureCookie =
+    secure || process.env.RENDER || Boolean(process.env.HTTPS);
   const sameSite = isSecureCookie ? "None" : "Lax";
   const secureAttr = isSecureCookie ? "; Secure" : "";
   // Note: __Host- prefix requires cookie to be set from same-origin with Secure flag.
@@ -803,7 +809,10 @@ async function route(req, res) {
         "Invite is invalid or expired. Ask your administrator to resend it.",
       );
     }
-    const existingUser = q("SELECT id, role FROM users WHERE lower(email)=lower(?)", inv.email);
+    const existingUser = q(
+      "SELECT id, role FROM users WHERE lower(email)=lower(?)",
+      inv.email,
+    );
     const uid = existingUser ? existingUser.id : id();
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -909,12 +918,26 @@ async function route(req, res) {
   if (await routeUpgrade(req, res, url, user, json)) return;
   if (req.method === "GET" && p === "/api/dashboard") {
     if (user.role === "super_admin") {
-      const totalCompanies = Number(q("SELECT count(*) n FROM companies")?.n || 0);
-      const activeCompanies = Number(q("SELECT count(*) n FROM companies WHERE active=1")?.n || 0);
-      const totalAdmins = Number(q("SELECT count(*) n FROM users WHERE role='admin' AND active=1")?.n || 0);
-      const totalEmployees = Number(q("SELECT count(*) n FROM users WHERE role='employee' AND active=1")?.n || 0);
-      const recentCompanies = all("SELECT c.*, (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='admin' AND u.active=1) AS admin_count, (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='employee' AND u.active=1) AS employee_count FROM companies c ORDER BY c.created_at DESC LIMIT 5");
-      const latestAudit = all("SELECT a.action,a.details,a.created_at,u.name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 8");
+      const totalCompanies = Number(
+        q("SELECT count(*) n FROM companies")?.n || 0,
+      );
+      const activeCompanies = Number(
+        q("SELECT count(*) n FROM companies WHERE active=1")?.n || 0,
+      );
+      const totalAdmins = Number(
+        q("SELECT count(*) n FROM users WHERE role='admin' AND active=1")?.n ||
+          0,
+      );
+      const totalEmployees = Number(
+        q("SELECT count(*) n FROM users WHERE role='employee' AND active=1")
+          ?.n || 0,
+      );
+      const recentCompanies = all(
+        "SELECT c.*, (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='admin' AND u.active=1) AS admin_count, (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='employee' AND u.active=1) AS employee_count FROM companies c ORDER BY c.created_at DESC LIMIT 5",
+      );
+      const latestAudit = all(
+        "SELECT a.action,a.details,a.created_at,u.name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 8",
+      );
       return json(res, 200, {
         totalCompanies,
         activeCompanies,
@@ -1741,7 +1764,8 @@ async function route(req, res) {
     return json(res, 201, { id: doc });
   }
   if (req.method === "GET" && p === "/api/audit") {
-    if (!["super_admin", "admin"].includes(user.role)) return json(res, 403, { error: "Admin only." });
+    if (!["super_admin", "admin"].includes(user.role))
+      return json(res, 403, { error: "Admin only." });
     return json(res, 200, {
       logs: all(
         "SELECT a.*,u.name,person.id AS employee_id,person.name AS employee_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN users person ON person.id=CASE WHEN a.entity IN ('employee_profile','bank_account','attendance') THEN a.entity_id WHEN a.entity='request' THEN (SELECT user_id FROM requests WHERE id=a.entity_id) WHEN a.entity='task' THEN (SELECT user_id FROM tasks WHERE id=a.entity_id) WHEN a.entity='salary_structure' THEN (SELECT user_id FROM salary_structures WHERE id=a.entity_id) WHEN a.entity='employee_project' THEN (SELECT user_id FROM employee_projects WHERE id=a.entity_id) WHEN a.entity='payroll_adjustment' THEN (SELECT i.user_id FROM payroll_adjustments x JOIN payroll_items i ON i.id=x.payroll_item_id WHERE x.id=a.entity_id) ELSE NULL END ORDER BY a.created_at DESC LIMIT 500",
@@ -1749,7 +1773,8 @@ async function route(req, res) {
     });
   }
   if (p === "/api/super/companies" && req.method === "GET") {
-    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    if (user.role !== "super_admin")
+      return json(res, 403, { error: "Super Admin only." });
     const companies = all(`
       SELECT c.*,
         (SELECT count(*) FROM users u WHERE u.company_id=c.id AND u.role='admin' AND u.active=1) AS admin_count,
@@ -1764,13 +1789,22 @@ async function route(req, res) {
   }
 
   if (p === "/api/super/companies" && req.method === "POST") {
-    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    if (user.role !== "super_admin")
+      return json(res, 403, { error: "Super Admin only." });
     const d = await body(req);
     const name = clean(d.name, 120);
-    let slug = clean(d.slug, 80).toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    let slug = clean(d.slug, 80)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
     if (!name) fail(400, "Company name is required.");
     if (!slug) {
-      slug = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
     }
     if (!slug) slug = `company-${Date.now()}`;
     if (q("SELECT id FROM companies WHERE slug=?", slug)) {
@@ -1798,7 +1832,13 @@ async function route(req, res) {
         address,
         createdAt,
       );
-      audit(user.id, "Created company", "company", companyId, `${name} (${slug})`);
+      audit(
+        user.id,
+        "Created company",
+        "company",
+        companyId,
+        `${name} (${slug})`,
+      );
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");
@@ -1810,7 +1850,8 @@ async function route(req, res) {
     let adminProvisioned = null;
     const adminEmailVal = clean(d.admin_email, 120).toLowerCase();
     const adminNameVal = clean(d.admin_name, 120);
-    const adminPasswordVal = typeof d.admin_password === "string" ? d.admin_password.trim() : "";
+    const adminPasswordVal =
+      typeof d.admin_password === "string" ? d.admin_password.trim() : "";
 
     if (adminEmailVal && /^\S+@\S+\.\S+$/.test(adminEmailVal)) {
       if (adminPasswordVal) {
@@ -1818,7 +1859,10 @@ async function route(req, res) {
         if (adminPasswordVal.length < 8) {
           fail(400, "Admin password must be at least 8 characters.");
         }
-        const existing = q("SELECT id, role, company_id FROM users WHERE lower(email)=lower(?)", adminEmailVal);
+        const existing = q(
+          "SELECT id, role, company_id FROM users WHERE lower(email)=lower(?)",
+          adminEmailVal,
+        );
         if (existing && existing.role === "super_admin") {
           fail(409, "This email belongs to the Super Admin account.");
         }
@@ -1854,7 +1898,13 @@ async function route(req, res) {
               "",
             );
           }
-          audit(user.id, "Provisioned company admin directly", "user", adminUid, `${adminEmailVal} for ${name}`);
+          audit(
+            user.id,
+            "Provisioned company admin directly",
+            "user",
+            adminUid,
+            `${adminEmailVal} for ${name}`,
+          );
           db.exec("COMMIT");
           adminProvisioned = {
             userId: adminUid,
@@ -1914,7 +1964,13 @@ async function route(req, res) {
             accepted: delivery.accepted,
             deliveryMode: delivery.mode,
           };
-          audit(user.id, "Invited company admin", "invite", inviteId, `${adminEmailVal} for ${name}`);
+          audit(
+            user.id,
+            "Invited company admin",
+            "invite",
+            inviteId,
+            `${adminEmailVal} for ${name}`,
+          );
         } catch (inviteErr) {
           console.error("[COMPANY_ADMIN_INVITE_ERROR]", inviteErr.message);
         }
@@ -1930,7 +1986,8 @@ async function route(req, res) {
 
   const superCompMatch = p.match(/^\/api\/super\/companies\/([\w-]+)$/);
   if (superCompMatch && req.method === "GET") {
-    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    if (user.role !== "super_admin")
+      return json(res, 403, { error: "Super Admin only." });
     const compId = superCompMatch[1];
     const company = q("SELECT * FROM companies WHERE id=?", compId);
     if (!company) fail(404, "Company not found.");
@@ -1946,7 +2003,8 @@ async function route(req, res) {
   }
 
   if (superCompMatch && req.method === "PATCH") {
-    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    if (user.role !== "super_admin")
+      return json(res, 403, { error: "Super Admin only." });
     const compId = superCompMatch[1];
     const company = q("SELECT * FROM companies WHERE id=?", compId);
     if (!company) fail(404, "Company not found.");
@@ -1988,12 +2046,17 @@ async function route(req, res) {
     args.push(compId);
     run(`UPDATE companies SET ${fields.join(", ")} WHERE id=?`, ...args);
     audit(user.id, "Updated company details", "company", compId);
-    return json(res, 200, { company: q("SELECT * FROM companies WHERE id=?", compId) });
+    return json(res, 200, {
+      company: q("SELECT * FROM companies WHERE id=?", compId),
+    });
   }
 
-  const superInviteAdminMatch = p.match(/^\/api\/super\/companies\/([\w-]+)\/invite-admin$/);
+  const superInviteAdminMatch = p.match(
+    /^\/api\/super\/companies\/([\w-]+)\/invite-admin$/,
+  );
   if (superInviteAdminMatch && req.method === "POST") {
-    if (user.role !== "super_admin") return json(res, 403, { error: "Super Admin only." });
+    if (user.role !== "super_admin")
+      return json(res, 403, { error: "Super Admin only." });
     const compId = superInviteAdminMatch[1];
     const company = q("SELECT * FROM companies WHERE id=?", compId);
     if (!company) fail(404, "Company not found.");
@@ -2001,19 +2064,35 @@ async function route(req, res) {
     const adminEmailVal = email(d.email);
     const adminNameVal = clean(d.name, 120);
     if (!adminNameVal) fail(400, "Admin name is required.");
-    
+
     // Check if user is already an admin for this exact company
-    const existingUser = q("SELECT id, role, company_id FROM users WHERE lower(email)=lower(?)", adminEmailVal);
-    if (existingUser && existingUser.role === "admin" && existingUser.company_id === compId) {
+    const existingUser = q(
+      "SELECT id, role, company_id FROM users WHERE lower(email)=lower(?)",
+      adminEmailVal,
+    );
+    if (
+      existingUser &&
+      existingUser.role === "admin" &&
+      existingUser.company_id === compId
+    ) {
       fail(409, "This user is already an Administrator for this company.");
     }
     if (existingUser && existingUser.role === "super_admin") {
-      fail(409, "This email belongs to the Super Admin account and cannot be assigned as a company admin.");
+      fail(
+        409,
+        "This email belongs to the Super Admin account and cannot be assigned as a company admin.",
+      );
     }
 
-    const adminPasswordVal = typeof d.password === "string" ? d.password.trim() : (typeof d.admin_password === "string" ? d.admin_password.trim() : "");
+    const adminPasswordVal =
+      typeof d.password === "string"
+        ? d.password.trim()
+        : typeof d.admin_password === "string"
+          ? d.admin_password.trim()
+          : "";
     if (adminPasswordVal) {
-      if (adminPasswordVal.length < 8) fail(400, "Admin password must be at least 8 characters.");
+      if (adminPasswordVal.length < 8)
+        fail(400, "Admin password must be at least 8 characters.");
       const adminUid = existingUser ? existingUser.id : id();
       const pwdHash = passwordHash(adminPasswordVal);
       db.exec("BEGIN IMMEDIATE");
@@ -2046,7 +2125,13 @@ async function route(req, res) {
             "",
           );
         }
-        audit(user.id, "Provisioned company administrator directly", "user", adminUid, `${adminEmailVal} for ${company.name}`);
+        audit(
+          user.id,
+          "Provisioned company administrator directly",
+          "user",
+          adminUid,
+          `${adminEmailVal} for ${company.name}`,
+        );
         db.exec("COMMIT");
         return json(res, 201, {
           email: adminEmailVal,
@@ -2097,7 +2182,13 @@ async function route(req, res) {
       delivery.messageId || "",
       inviteId,
     );
-    audit(user.id, "Invited company administrator", "invite", inviteId, `${adminEmailVal} for ${company.name}`);
+    audit(
+      user.id,
+      "Invited company administrator",
+      "invite",
+      inviteId,
+      `${adminEmailVal} for ${company.name}`,
+    );
     return json(res, 201, {
       inviteId,
       email: adminEmailVal,
@@ -2135,7 +2226,7 @@ const server = http.createServer(async (req, res) => {
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Content-Security-Policy":
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://macrow-people-hrm.onrender.com https://people.macrowdigital.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://macrow-people-hrm-1.onrender.com/ https://people.macrowdigital.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       "X-Frame-Options": "DENY",
       "Cache-Control": "no-store",
     });
