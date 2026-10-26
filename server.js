@@ -2226,7 +2226,7 @@ const server = http.createServer(async (req, res) => {
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Content-Security-Policy":
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://macrow-people-hrm-1.onrender.com/ https://people.macrowdigital.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://macrow-people-hrm-1.onrender.com https://people.macrowdigital.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       "X-Frame-Options": "DENY",
       "Cache-Control": "no-store",
     });

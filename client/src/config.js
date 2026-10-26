@@ -23,5 +23,5 @@ export const API_BASE_URL = (() => {
     }
   }
   // Default Render backend for separate frontend hosting (e.g. Hostinger, Vercel, Netlify)
-  return "https://macrow-people-hrm-1.onrender.com/";
+  return "https://macrow-people-hrm-1.onrender.com";
 })();
