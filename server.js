@@ -423,10 +423,15 @@ function nextEmployeeCode() {
 }
 const secure = process.env.NODE_ENV === "production";
 function getAllowedOrigins() {
-  const list = [];
+  const list = [
+    "https://people.macrowdigital.com",
+    "http://people.macrowdigital.com",
+    "https://macrowdigital.com",
+    "http://macrowdigital.com",
+  ];
   try {
     const origin = new URL(appBaseUrl()).origin;
-    if (origin) list.push(origin);
+    if (origin && !list.includes(origin)) list.push(origin);
   } catch {}
   if (process.env.CLIENT_ORIGIN) {
     for (const o of process.env.CLIENT_ORIGIN.split(",")) {
