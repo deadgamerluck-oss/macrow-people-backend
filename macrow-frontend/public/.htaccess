@@ -1,0 +1,15 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Serve existing files and directories directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Route accept-invite cleanly if accessed without .html
+  RewriteRule ^accept-invite/?$ accept-invite.html [L]
+
+  # Route everything else to index.html for SPA routing
+  RewriteRule ^ index.html [L]
+</IfModule>
