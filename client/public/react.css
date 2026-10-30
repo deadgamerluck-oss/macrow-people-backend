@@ -1,0 +1,502 @@
+.brand img{display:block;max-width:100%;max-height:44px;object-fit:contain;object-position:left center}.brand{padding-top:7px;padding-bottom:10px}.stat-icon{font-size:16px}.field input[type=checkbox]{width:auto;display:inline-block;margin-right:7px}.notice.show{display:flex}a{color:var(--accent)}button:disabled{opacity:.65;cursor:wait}
+.profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 20px}.profile-grid p{padding:12px;margin:0;border-bottom:1px solid #e8edf3;line-height:1.65}.sensitive-panel{margin:14px 0;padding:14px;border:1px solid #fb4818;border-radius:10px;background:#fff5f1;color:#172235;font-weight:700;overflow-wrap:anywhere}.event-list .event p{margin:8px 0;line-height:1.6}.event-list .event small{display:block;margin-top:5px}.employee-toolbar input[type=date]{min-width:145px}@media(max-width:700px){.profile-grid{grid-template-columns:1fr 1fr}.employee-toolbar>*{flex:1 1 140px}}
+
+/* --- Payslip Builder UI (matches reference spec) --- */
+.payslip-page-wrapper {
+  max-width: 860px;
+  margin: 0 auto 40px auto;
+}
+.payroll-tab-nav {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+  background: #edf2f7;
+  padding: 5px;
+  border-radius: 10px;
+  width: fit-content;
+}
+.payroll-tab-btn {
+  border: none;
+  background: transparent;
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5568;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.payroll-tab-btn.active {
+  background: #ffffff;
+  color: #1a202c;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.07);
+}
+.payslip-canvas-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  padding: 36px 44px;
+  color: #2d3748;
+  font-family: inherit;
+}
+.payslip-canvas-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+.payslip-logo-uploader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.payslip-upload-box {
+  width: 110px;
+  height: 70px;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #3b82f6;
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.payslip-upload-box:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+.payslip-upload-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.payslip-upload-meta h4 {
+  margin: 0 0 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.payslip-upload-meta p {
+  margin: 0;
+  font-size: 10px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+.payslip-month-meta {
+  text-align: right;
+}
+.payslip-month-meta .meta-label {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+.payslip-month-meta .meta-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.payslip-company-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 320px;
+  margin-bottom: 30px;
+}
+.payslip-seamless-input {
+  border: none;
+  background: transparent;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: #334155;
+  outline: none;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+.payslip-seamless-input::placeholder {
+  color: #94a3b8;
+}
+.payslip-seamless-input:hover {
+  background: #f8fafc;
+}
+.payslip-seamless-input:focus {
+  background: #ffffff;
+  box-shadow: 0 0 0 1.5px #60a5fa;
+}
+.company-name-input {
+  font-size: 13.5px;
+  font-weight: 600;
+  border: 1px solid #bfdbfe;
+  background: #f8fafc;
+  color: #1e293b;
+}
+.payslip-section-heading {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.payslip-section-heading .req-star {
+  color: #ef4444;
+}
+.payslip-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 36px;
+  row-gap: 12px;
+  margin-bottom: 14px;
+}
+.payslip-summary-row {
+  display: grid;
+  grid-template-columns: 140px 10px 1fr;
+  align-items: center;
+  font-size: 11.5px;
+}
+.payslip-summary-row .label-col {
+  color: #475569;
+  font-weight: 500;
+}
+.payslip-summary-row .colon-col {
+  color: #94a3b8;
+}
+.payslip-summary-row .input-col {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.payslip-summary-row input, .payslip-summary-row select {
+  width: 100%;
+  border: none;
+  border-bottom: 1px dotted #cbd5e1;
+  background: transparent;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  color: #1e293b;
+  outline: none;
+  border-radius: 0;
+}
+.payslip-summary-row input:focus, .payslip-summary-row select:focus {
+  border-bottom: 1.5px solid #3b82f6;
+  background: #f8fafc;
+}
+.payslip-action-btn-sm {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  cursor: pointer;
+  margin-bottom: 24px;
+}
+.payslip-action-btn-sm:hover {
+  text-decoration: underline;
+}
+.payslip-income-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 22px;
+}
+.payslip-col-table {
+  display: flex;
+  flex-direction: column;
+}
+.payslip-col-table.deductions-col {
+  border-left: 1px solid #e2e8f0;
+}
+.payslip-table-head {
+  display: flex;
+  justify-content: space-between;
+  background: #f8fafc;
+  padding: 8px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+}
+.payslip-table-body {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 110px;
+}
+.payslip-line-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.payslip-line-name-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  color: #334155;
+  outline: none;
+  padding: 3px 0;
+}
+.payslip-line-name-input:focus {
+  border-bottom: 1px solid #94a3b8;
+}
+.payslip-line-amt-input {
+  width: 90px;
+  text-align: right;
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #1e293b;
+  outline: none;
+  padding: 3px 0;
+}
+.payslip-line-amt-input:focus {
+  border-bottom: 1px solid #94a3b8;
+}
+.payslip-del-row-btn {
+  border: none;
+  background: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 13px;
+  line-height: 1;
+}
+.payslip-del-row-btn:hover {
+  color: #ef4444;
+}
+.payslip-table-footer {
+  margin-top: auto;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.payslip-net-payable-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.net-payable-details {
+  padding: 14px 18px;
+}
+.net-payable-details h3 {
+  margin: 0 0 3px 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+.net-payable-details p {
+  margin: 0;
+  font-size: 10.5px;
+  color: #64748b;
+}
+.net-payable-amount {
+  background: #f8fafc;
+  padding: 18px 28px;
+  border-left: 1px solid #e2e8f0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 140px;
+  text-align: right;
+}
+.payslip-words-row {
+  text-align: right;
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 30px;
+}
+.payslip-btn-toolbar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 24px;
+}
+.btn-generate-red {
+  background: #e04538;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 24px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(224, 69, 56, 0.2);
+  transition: background 0.15s ease;
+}
+.btn-generate-red:hover {
+  background: #c8382c;
+}
+.btn-reset-white {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 9px 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-reset-white:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+@media(max-width: 720px) {
+  .payslip-canvas-card {
+    padding: 20px 16px;
+  }
+  .payslip-canvas-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .payslip-month-meta {
+    text-align: left;
+  }
+  .payslip-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .payslip-income-tables {
+    grid-template-columns: 1fr;
+  }
+  .payslip-col-table.deductions-col {
+    border-left: none;
+    border-top: 1px solid #e2e8f0;
+  }
+}
+
+/* Macrow People visual refresh: brighter work surfaces, a calmer navy rail, and a warm orange accent. */
+:root{--ink:#202b3c;--muted:#748096;--line:#e6eaf1;--bg:#f5f7fb;--nav:#152447;--accent:#f04416;--green:#168568;--amber:#a76b13;--shadow:0 10px 30px rgba(24,36,58,.055)}
+body{background:radial-gradient(ellipse at 82% 0%,rgba(255,230,218,.34),transparent 28%),#f5f7fb;color:var(--ink);letter-spacing:.005em}
+.shell{grid-template-columns:224px minmax(0,1fr)}
+.sidebar{background:linear-gradient(175deg,#152447 0%,#1a2b50 68%,#202f54 100%);padding:21px 13px 17px;box-shadow:8px 0 28px rgba(22,37,73,.08)}
+.brand{padding:8px 12px}.brand img{max-height:38px;max-width:150px}
+.brand-sub{padding:0 12px 24px;color:#aebbd0;letter-spacing:1.45px}
+.nav-label{color:#8fa1c0;font-size:9px;letter-spacing:1.45px;padding-left:13px}
+.nav-section{gap:5px;margin-bottom:12px}
+.nav button{min-height:41px;border:1px solid transparent;border-radius:10px;color:#c7d0e1;transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.nav button:hover{background:#ffffff12;color:white;transform:translateX(2px)}
+.nav button.active{position:relative;background:linear-gradient(100deg,rgba(251,72,24,.22),rgba(255,255,255,.07));border-color:#ffffff13;color:#fff;box-shadow:inset 3px 0 0 #fb4818}
+.nav .ico{width:19px;color:#ff805d;font-size:16px}
+.side-bottom{border-color:#ffffff20;color:#b0bdd2}.side-bottom b{font-size:12px;margin-bottom:3px}.side-bottom .button{background:#ffffff10;border-color:#ffffff1c;color:#fff}
+.main{min-width:0}.topbar{height:70px;padding:0 clamp(18px,3vw,38px);background:rgba(255,255,255,.94);border-bottom:1px solid #e7ebf2;box-shadow:0 3px 16px rgba(21,36,71,.035);backdrop-filter:blur(10px)}
+.crumb{font-size:12px;color:#8b94a4}.crumb b{color:#27334a;font-weight:700}
+.top-actions{gap:12px}.top-actions>.pill{padding:6px 11px;border:1px solid #f4d7cd;border-radius:999px;background:#fff4ef;color:#a83d20;font-size:9px;letter-spacing:.2px}
+.jump-to select{border-color:#e5e9f0;border-radius:10px;background:#fafbfc;padding:9px 30px 9px 11px}
+.content{max-width:1540px;padding:30px clamp(18px,3vw,38px) 42px}
+.welcome{position:relative;isolation:isolate;overflow:hidden;align-items:center;min-height:116px;padding:22px 25px;margin-bottom:20px;border:1px solid #f1e6e1;border-radius:18px;background:linear-gradient(110deg,#fff 0%,#fff 56%,#fff7f3 100%);box-shadow:0 9px 28px rgba(41,46,60,.035)}
+.welcome:after{content:"";position:absolute;z-index:-1;width:214px;height:214px;right:4.5%;top:-128px;border-radius:50%;background:radial-gradient(circle at 48% 58%,#ffb89e 0 4%,#ffd9c9 4% 28%,rgba(255,222,210,.34) 29% 55%,transparent 56%);pointer-events:none}
+.welcome>div,.welcome>button,.welcome>.button{position:relative;z-index:1}
+.welcome h1{margin:5px 0 6px;font-size:clamp(23px,2vw,29px);letter-spacing:-.9px;color:#1f2b40}
+.welcome p{font-size:12px;color:#758094;max-width:650px}
+.eyebrow{display:inline-flex;align-items:center;gap:7px;color:#b44628;font-size:9px;font-weight:750;letter-spacing:1.3px}
+.eyebrow:before{content:"";width:7px;height:7px;border-radius:50%;background:#fb4818;box-shadow:0 0 0 4px #fb48181a}
+.button{min-height:35px;padding:9px 13px;border-radius:10px;transition:transform .16s ease,box-shadow .16s ease,background .16s ease}
+.button:hover{filter:none;transform:translateY(-1px);box-shadow:0 6px 14px rgba(26,40,64,.08)}
+.button.primary{background:linear-gradient(135deg,#fb4818,#ed3d15);box-shadow:0 5px 12px #f0441629}
+.button.dark{background:#1b2c50;border-color:#1b2c50}
+.cards{gap:14px;margin-bottom:17px}
+.card,.panel{border-color:#e7eaf1;border-radius:15px;box-shadow:var(--shadow)}
+.card{position:relative;overflow:hidden;padding:17px;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.card:hover{transform:translateY(-2px);border-color:#f0d4c9;box-shadow:0 14px 30px rgba(24,36,58,.09)}
+.stat:before{content:"";position:absolute;left:0;top:0;width:100%;height:3px;background:linear-gradient(90deg,#fb4818,#ffb293)}
+.stat:nth-child(2):before{background:linear-gradient(90deg,#4678d8,#a8c4ff)}.stat:nth-child(3):before{background:linear-gradient(90deg,#36a985,#a3e3c8)}.stat:nth-child(4):before{background:linear-gradient(90deg,#e6a33a,#ffe0a4)}
+.stat-top{align-items:center;font-size:10px;font-weight:620;color:#718096}
+.stat-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#fff0e9;color:#e64b22;font-size:17px}
+.stat:nth-child(2) .stat-icon{background:#eef3ff;color:#4774d2}.stat:nth-child(3) .stat-icon{background:#e9f8f1;color:#258b6c}.stat:nth-child(4) .stat-icon{background:#fff6e5;color:#bd801e}
+.stat strong{font-size:25px;letter-spacing:-.7px;margin:10px 0 4px;color:#202b3c}
+.sub{font-size:10px;color:#8993a4}
+.panel{padding:20px;margin-bottom:16px}
+.panel-head{margin-bottom:15px;padding-bottom:11px;border-bottom:1px solid #f0f2f6}
+.panel h2{font-size:14px;letter-spacing:-.15px;color:#26334a}
+.grid-two{gap:16px}
+.field{gap:6px}.field label{font-size:10px;color:#59677d}.field input,.field select,.field textarea,.toolbar input,.toolbar select{border-color:#e2e7ee;border-radius:10px;padding:10px 11px;background:#fff;transition:border-color .15s ease,box-shadow .15s ease}
+.field input:focus,.field select:focus,.field textarea:focus,.toolbar input:focus,.toolbar select:focus,.jump-to select:focus{outline:none;border-color:#fb8669;box-shadow:0 0 0 3px rgba(251,72,24,.1)}
+table{border-collapse:separate;border-spacing:0;min-width:580px}
+th{padding:11px 10px;background:#f8f9fc;color:#78849a;font-size:9px;letter-spacing:.7px}
+th:first-child{border-radius:8px 0 0 8px}th:last-child{border-radius:0 8px 8px 0}
+td{padding:12px 10px;border-bottom:1px solid #edf0f4;font-size:11px}
+tbody tr{transition:background .15s ease}tbody tr:hover{background:#fffaf7}
+.pill{border:1px solid transparent}.pill.blue{border-color:#f5d9d0;background:#fff2ed;color:#ac4325}
+.row{border-color:#edf0f4;border-radius:11px;padding:12px;background:#fff}.row:hover{border-color:#f1d8cf;background:#fffaf8}
+.rows:has(.task-card){gap:11px}.task-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 16px;padding:15px 17px;border-left:3px solid #f2b39e}.task-card .row-copy{min-width:0}.task-card .row-copy b{font-size:12px;color:#25334b}.task-card .row-copy span{display:block;margin-top:4px;line-height:1.55}.task-card select{border:1px solid #e6eaf1;border-radius:9px;background:#fff;padding:8px 10px;color:#37445a;font-size:10px}.task-check{grid-column:1/-1;display:flex;gap:8px;align-items:center;padding:7px 9px;border:1px solid #edf0f4;border-radius:9px;background:#fafbfc;color:#5f6c81;font-size:10px}.task-check input{accent-color:#f04416}
+.attendance-box{border-color:#f5ded5;border-radius:14px;background:linear-gradient(115deg,#fff8f4,#fff 85%);padding:19px}
+.timer{color:#1b2c50;font-size:32px;letter-spacing:.5px}.schedule span{border-radius:10px;background:#fff}
+.banner{position:relative;overflow:hidden;border-radius:15px;background:linear-gradient(110deg,#18294d,#263d68);padding:20px 22px;box-shadow:0 10px 25px rgba(23,38,72,.12)}
+.banner:after{content:"";position:absolute;width:160px;height:160px;right:6%;top:-96px;border:22px solid #ffffff0d;border-radius:50%}
+.banner>*{position:relative;z-index:1}
+.event{border-color:#e9edf3;border-radius:11px;padding:12px}.event-mark{width:34px;height:34px;border-radius:10px;background:#fff0e9}
+.document-card{border-radius:12px;border-color:#e8ecf2;background:linear-gradient(120deg,#fff,#fffdfc)}
+.document-icon{border-radius:12px;background:#fff0e9;color:#d94b27}
+.calendar-grid{border-color:#e8ecf2;border-radius:11px;overflow:hidden}.cal-head,.cal-day{border-color:#e8ecf2}.cal-head{background:#f8f9fc;font-weight:700}.cal-day{min-height:85px;padding:8px;transition:background .14s ease}.cal-day:hover{background:#fff8f4}.cal-day.today{background:#fff3ed}.cal-day.selected{box-shadow:inset 0 0 0 2px #fb4818}
+.modal{border-radius:18px;border:1px solid #f0edf0;padding:23px;box-shadow:0 28px 90px rgba(16,27,48,.28)}
+.notice-card{border-color:#f1ded7;border-left-color:#fb4818;border-radius:13px}
+.login-page{background:#fff}.login-brand{position:relative;overflow:hidden;background:radial-gradient(circle at 84% 17%,#354c78 0,transparent 28%),linear-gradient(145deg,#142345,#1a2f58);padding:8vw}.login-brand:after{content:"";position:absolute;width:340px;height:340px;border:1px solid #ffffff1b;border-radius:50%;right:-110px;bottom:-185px;box-shadow:0 0 0 36px #ffffff08,0 0 0 78px #ffffff06}.login-brand>*{position:relative;z-index:1}.login-logo{display:block;width:min(100%,480px);height:auto;object-fit:contain;object-position:left center;margin:0 0 32px}.login-brand h1{letter-spacing:-1.6px}.login-card{padding:20px;border-radius:20px}.login-card h2{color:#1d2b45}
+.payslip-page-wrapper{max-width:1040px}
+body .payslip-canvas-card{border:1px solid #e7eaf1;border-radius:18px;padding:clamp(22px,4vw,40px);box-shadow:0 15px 40px rgba(24,36,58,.07)}
+body .payslip-canvas-header{padding-bottom:21px;border-bottom:1px solid #edf0f4}
+body .payslip-upload-box{border-radius:12px;border-color:#f0b5a3;background:#fff8f4;color:#cf4a27}
+body .payslip-upload-meta h4{font-size:12px;color:#25334c}.payslip-upload-meta p{font-size:10px}
+body .payslip-month-meta .meta-label{font-size:10px;letter-spacing:.5px;text-transform:uppercase}
+body .payslip-month-meta .meta-val{color:#1c2e52;font-size:17px}
+body .payslip-company-inputs{padding:11px;border:1px solid #f0e9e6;border-radius:12px;background:#fffdfc}
+body .payslip-section-heading{font-size:13px;color:#27344c;margin-bottom:13px}
+body .payslip-summary-row{border-color:#edf0f4;border-radius:10px;background:#fafbfc}
+body .payslip-income-tables{border-color:#e8ecf2;border-radius:13px}
+body .payslip-table-head{background:#f5f7fb;color:#34435d}
+body .payslip-col-table.deductions-col{border-color:#e8ecf2}
+body .payslip-table-footer{background:#fafbfc}
+body .payslip-net-payable-box{border-color:#f1d7cd;border-radius:13px;background:linear-gradient(100deg,#fff9f6,#fff)}
+body .net-payable-details h3{color:#1d2d4e;font-size:14px}
+body .net-payable-amount{background:#fff2ec;color:#ae3d1e;border-color:#f3d9cf;font-size:20px}
+body .btn-generate-red{background:linear-gradient(130deg,#fb4818,#e83f19);border-radius:10px;box-shadow:0 5px 13px rgba(224,69,56,.18)}
+body .btn-reset-white{border-radius:10px}
+button:focus-visible,a:focus-visible{outline:3px solid rgba(251,72,24,.35);outline-offset:2px}
+@media(max-width:850px){.shell{grid-template-columns:205px minmax(0,1fr)}.content{padding:22px 18px 32px}.welcome{padding:20px}.cards{gap:10px}}
+@media(max-width:650px){.shell{display:block}.sidebar{height:auto;max-height:none;padding:7px 9px;background:#152447;box-shadow:0 5px 14px #15244716}.brand,.brand-sub,.side-bottom{display:none}.nav{display:flex;gap:5px;overflow-x:auto;padding:1px 0 4px}.nav-section{display:contents}.nav-section .nav-label{display:none}.nav button{min-height:38px;width:auto;padding:8px 10px;border-radius:9px;font-size:11px;white-space:nowrap}.nav button.active{box-shadow:inset 0 -2px 0 #fb4818,inset 0 0 0 1px #ffffff13}.main{min-width:0}.topbar{height:58px;padding:0 12px}.content{padding:13px 11px 28px}.welcome{min-height:0;padding:16px;border-radius:14px;align-items:flex-start}.welcome:after{right:-44px;top:-138px}.welcome h1{font-size:22px}.welcome p{max-width:90%;font-size:11px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.card{padding:13px}.panel{padding:14px;border-radius:13px}.panel-head{padding-bottom:9px}.stat strong{font-size:22px}.top-actions>.pill{display:none}.jump-to select{max-width:140px}.calendar-grid{min-width:560px}.calendar-grid-wrap{overflow:auto}.payslip-btn-toolbar{flex-wrap:wrap}.payslip-income-tables{grid-template-columns:1fr}.payslip-col-table.deductions-col{border-left:0;border-top:1px solid #e8ecf2}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+/* Macrow navigation: brand navy, clear white labels, orange-red active state. */
+.shell{grid-template-columns:280px minmax(0,1fr)}
+.sidebar{width:280px;min-width:280px;background:#17294d!important;color:#fff!important;border-right:1px solid #263b63;box-shadow:3px 0 18px rgba(16,32,62,.12)}
+.brand{color:#fff!important}.brand-sub{color:#c1cce0!important}.nav-section .nav-label,.nav-label{color:#aebbd3!important}
+.nav button{width:100%;min-width:0;white-space:nowrap;color:#f6f8fc!important;border-color:transparent!important;background:transparent!important;box-shadow:none!important}
+.nav button .label,.nav button span{white-space:nowrap}
+.nav button:hover{background:#263b63!important;color:#fff!important;transform:none!important}
+.nav button.active{background:#f04416!important;color:#fff!important;font-weight:700;box-shadow:0 5px 14px rgba(240,68,22,.22)!important}
+.nav button.active .ico,.nav .ico{color:inherit}
+.side-bottom{border-color:#35496d!important;color:#c1cce0!important}.side-bottom b{color:#fff!important}.side-bottom .button{background:#23375d!important;border-color:#42577e!important;color:#fff!important}
+@media(max-width:850px){.shell{grid-template-columns:250px minmax(0,1fr)}.sidebar{width:250px;min-width:250px}}
+@media(max-width:650px){.shell{display:block}.sidebar{width:100%;min-width:0;background:#17294d!important;box-shadow:0 5px 16px rgba(16,32,62,.18)!important}.nav button{width:auto;min-width:max-content}.nav button.active{background:#f04416!important;box-shadow:inset 0 -2px #ff9a78!important}}
+
