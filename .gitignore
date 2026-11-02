@@ -10,3 +10,4 @@ node_modules/
 hrms-encryption.key
 coverage/
 .DS_Store
+.neon
