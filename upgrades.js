@@ -308,7 +308,13 @@ function initUpgrades(database, folder) {
   ensureColumn("payroll_periods", "company_id", "TEXT NOT NULL DEFAULT ''");
   ensureColumn("payroll_periods", "period_start_date", "TEXT NOT NULL DEFAULT ''");
   ensureColumn("payroll_periods", "period_end_date", "TEXT NOT NULL DEFAULT ''");
-  run("UPDATE payroll_periods SET company_id=COALESCE((SELECT company_id FROM users WHERE id=created_by),'') WHERE company_id='' OR company_id IS NULL");
+  for (const p of all("SELECT id, period, created_by FROM payroll_periods WHERE company_id='' OR company_id IS NULL")) {
+    const creator = q("SELECT company_id FROM users WHERE id=?", p.created_by);
+    const targetComp = creator?.company_id || '';
+    if (targetComp && !q("SELECT id FROM payroll_periods WHERE company_id=? AND period=? AND id<>?", targetComp, p.period, p.id)) {
+      run("UPDATE payroll_periods SET company_id=? WHERE id=?", targetComp, p.id);
+    }
+  }
   const payrollTableSql = q("SELECT sql FROM sqlite_master WHERE type='table' AND name='payroll_periods'")?.sql || "";
   if (/period\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(payrollTableSql)) {
     db.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;");
