@@ -308,7 +308,13 @@ function initUpgrades(database, folder) {
   ensureColumn("payroll_periods", "company_id", "TEXT NOT NULL DEFAULT ''");
   ensureColumn("payroll_periods", "period_start_date", "TEXT NOT NULL DEFAULT ''");
   ensureColumn("payroll_periods", "period_end_date", "TEXT NOT NULL DEFAULT ''");
-  run("UPDATE payroll_periods SET company_id=COALESCE((SELECT company_id FROM users WHERE id=created_by),'') WHERE company_id='' OR company_id IS NULL");
+  for (const p of all("SELECT id, period, created_by FROM payroll_periods WHERE company_id='' OR company_id IS NULL")) {
+    const creator = q("SELECT company_id FROM users WHERE id=?", p.created_by);
+    const targetComp = creator?.company_id || '';
+    if (targetComp && !q("SELECT id FROM payroll_periods WHERE company_id=? AND period=? AND id<>?", targetComp, p.period, p.id)) {
+      run("UPDATE payroll_periods SET company_id=? WHERE id=?", targetComp, p.id);
+    }
+  }
   const payrollTableSql = q("SELECT sql FROM sqlite_master WHERE type='table' AND name='payroll_periods'")?.sql || "";
   if (/period\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(payrollTableSql)) {
     db.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;");
@@ -4160,7 +4166,7 @@ async function routeUpgrade(req, res, url, user, json) {
     if (!requireRole(user, [ADMIN, HR, PAYROLL], json, res)) return true;
     const pol = q("SELECT * FROM payroll_policies WHERE id=?", policyIdMatch[1]);
     if (!pol) fail(404, "Payroll policy not found.");
-    if (!requireCompanyUser(user, pol.created_by || user.id, json, res) && String(pol.company_id || "") !== "") return true;
+    if (user?.role !== SUPER_ADMIN && String(pol.company_id || "") !== "" && String(user?.company_id || "") !== "" && String(pol.company_id) !== String(user.company_id)) { fail(404, "Payroll policy not found."); }
     const history = all(
       "SELECT h.*, u.name AS actor_name FROM payroll_policy_history h LEFT JOIN users u ON u.id=h.actor_id WHERE h.policy_id=? ORDER BY h.version DESC, h.created_at DESC",
       pol.id,
@@ -4299,7 +4305,7 @@ async function routeUpgrade(req, res, url, user, json) {
     if (!requireRole(user, [ADMIN, PAYROLL], json, res)) return true;
     const existing = q("SELECT * FROM payroll_policies WHERE id=?", policyIdMatch[1]);
     if (!existing) fail(404, "Payroll policy not found.");
-    if (String(existing.company_id || "") !== String(user.company_id || "")) fail(404, "Payroll policy not found.");
+    if (user?.role !== SUPER_ADMIN && String(existing.company_id || "") !== "" && String(user?.company_id || "") !== "" && String(existing.company_id) !== String(user.company_id)) { fail(404, "Payroll policy not found."); }
     const d = await body(req);
     const name = clean(d.name || existing.name, 120);
     const code = clean(d.code || existing.code, 30);
