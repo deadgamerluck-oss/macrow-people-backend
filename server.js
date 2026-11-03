@@ -8,6 +8,7 @@ const nodemailer = require("nodemailer");
 const readline = require("node:readline/promises");
 const { stdin, stdout } = require("node:process");
 const { initUpgrades, routeUpgrade } = require("./upgrades");
+const neonSync = require("./config/neon-sync");
 
 // Load environment variables from .env file if present
 const envFile = path.join(__dirname, ".env");
@@ -299,6 +300,11 @@ CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, c
 CREATE TABLE IF NOT EXISTS audit_logs(id TEXT PRIMARY KEY, actor_id TEXT REFERENCES users(id), action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, ip TEXT NOT NULL, success INTEGER NOT NULL, created_at TEXT NOT NULL);`);
 initUpgrades(db, DATA);
+if (process.env.DATABASE_URL) {
+  neonSync.restoreFromNeon(db).then(() => {
+    console.log("[NEON] Local store hydrated from Neon Cloud on startup.");
+  }).catch(e => console.error("[NEON] Initial hydration error:", e.message));
+}
 
 const now = () => new Date().toISOString(),
   id = () => crypto.randomUUID(),
