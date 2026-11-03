@@ -1758,7 +1758,7 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     const requestId = crypto.randomUUID();
     console.error(
-      `[API_ERROR] requestId=${requestId} status=${Number(e.status) || 500} code=${/^[A-Z0-9_]+$/i.test(String(e.code || "")) ? String(e.code).slice(0, 40) : "UNCLASSIFIED"}`,
+      `[API_ERROR] requestId=${requestId} status=${Number(e.status) || 500} code=${/^[A-Z0-9_]+$/i.test(String(e.code || "")) ? String(e.code).slice(0, 40) : "UNCLASSIFIED"} msg="${e.message}" path="${req.method} ${req.url}"`,
     );
     json(res, e.status || 500, {
       error: e.status ? e.message : "Request could not be completed.",

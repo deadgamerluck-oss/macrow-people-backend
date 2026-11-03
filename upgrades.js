@@ -4160,7 +4160,7 @@ async function routeUpgrade(req, res, url, user, json) {
     if (!requireRole(user, [ADMIN, HR, PAYROLL], json, res)) return true;
     const pol = q("SELECT * FROM payroll_policies WHERE id=?", policyIdMatch[1]);
     if (!pol) fail(404, "Payroll policy not found.");
-    if (!requireCompanyUser(user, pol.created_by || user.id, json, res) && String(pol.company_id || "") !== "") return true;
+    if (user?.role !== SUPER_ADMIN && String(pol.company_id || "") !== "" && String(user?.company_id || "") !== "" && String(pol.company_id) !== String(user.company_id)) { fail(404, "Payroll policy not found."); }
     const history = all(
       "SELECT h.*, u.name AS actor_name FROM payroll_policy_history h LEFT JOIN users u ON u.id=h.actor_id WHERE h.policy_id=? ORDER BY h.version DESC, h.created_at DESC",
       pol.id,
@@ -4299,7 +4299,7 @@ async function routeUpgrade(req, res, url, user, json) {
     if (!requireRole(user, [ADMIN, PAYROLL], json, res)) return true;
     const existing = q("SELECT * FROM payroll_policies WHERE id=?", policyIdMatch[1]);
     if (!existing) fail(404, "Payroll policy not found.");
-    if (String(existing.company_id || "") !== String(user.company_id || "")) fail(404, "Payroll policy not found.");
+    if (user?.role !== SUPER_ADMIN && String(existing.company_id || "") !== "" && String(user?.company_id || "") !== "" && String(existing.company_id) !== String(user.company_id)) { fail(404, "Payroll policy not found."); }
     const d = await body(req);
     const name = clean(d.name || existing.name, 120);
     const code = clean(d.code || existing.code, 30);
