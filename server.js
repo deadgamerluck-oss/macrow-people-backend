@@ -8,6 +8,7 @@ const nodemailer = require("nodemailer");
 const readline = require("node:readline/promises");
 const { stdin, stdout } = require("node:process");
 const { initUpgrades, routeUpgrade } = require("./upgrades");
+const neonSync = require("./config/neon-sync");
 
 // Load environment variables from .env file if present
 const envFile = path.join(__dirname, ".env");
@@ -299,6 +300,11 @@ CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, c
 CREATE TABLE IF NOT EXISTS audit_logs(id TEXT PRIMARY KEY, actor_id TEXT REFERENCES users(id), action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, ip TEXT NOT NULL, success INTEGER NOT NULL, created_at TEXT NOT NULL);`);
 initUpgrades(db, DATA);
+if (process.env.DATABASE_URL) {
+  neonSync.restoreFromNeon(db).then(() => {
+    console.log("[NEON] Local store hydrated from Neon Cloud on startup.");
+  }).catch(e => console.error("[NEON] Initial hydration error:", e.message));
+}
 
 const now = () => new Date().toISOString(),
   id = () => crypto.randomUUID(),
@@ -495,7 +501,7 @@ function json(res, status, obj, headers = {}) {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy":
-      "default-src 'self' 'unsafe-inline' https: data:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src *; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      "default-src 'self' 'unsafe-inline' https: data:; script-src 'self' 'unsafe-inline' https: blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src *; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     "X-Frame-Options": "DENY",
     ...headers,
   });
@@ -847,7 +853,7 @@ async function route(req, res) {
   let user = auth(req, res);
   if (!user) return;
   if (req.method === "POST" && p === "/api/hrm/smtp/test") {
-    if (user.role !== "admin")
+    if (user.role !== "admin" && user.role !== "super_admin")
       return json(res, 403, { error: "Super Admin only." });
     const correlationId = crypto.randomUUID();
     try {
@@ -1750,7 +1756,7 @@ const server = http.createServer(async (req, res) => {
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Content-Security-Policy":
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://macrow-people-hrm.onrender.com https://people.macrowdigital.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        "default-src 'self'; script-src 'self' 'unsafe-inline' https: blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://macrow-people-hrm.onrender.com https://people.macrowdigital.com; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       "X-Frame-Options": "DENY",
       "Cache-Control": "no-store",
     });
