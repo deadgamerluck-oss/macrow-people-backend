@@ -853,7 +853,7 @@ async function route(req, res) {
   let user = auth(req, res);
   if (!user) return;
   if (req.method === "POST" && p === "/api/hrm/smtp/test") {
-    if (user.role !== "admin")
+    if (user.role !== "admin" && user.role !== "super_admin")
       return json(res, 403, { error: "Super Admin only." });
     const correlationId = crypto.randomUUID();
     try {
