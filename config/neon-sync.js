@@ -221,7 +221,27 @@ async function restoreFromNeon(sqliteDb) {
         continue;
       }
 
-      if (!pgRows || pgRows.length === 0) continue;
+      const pks = TABLE_PKS[tableName] || ["id"];
+
+      // If Neon has NO rows for this table, purge local SQLite table so deleted rows in Neon do not persist
+      if (!pgRows || pgRows.length === 0) {
+        try {
+          sqliteDb.prepare(`DELETE FROM "${tableName}"`).run();
+        } catch {}
+        continue;
+      }
+
+      // If Neon has rows, delete any local SQLite rows that were deleted from Neon (Neon is source of truth)
+      if (pks.length === 1) {
+        const pkCol = pks[0];
+        const neonIds = pgRows.map((r) => r[pkCol]).filter((val) => val !== undefined && val !== null);
+        if (neonIds.length > 0) {
+          const marks = neonIds.map(() => "?").join(", ");
+          try {
+            sqliteDb.prepare(`DELETE FROM "${tableName}" WHERE "${pkCol}" NOT IN (${marks})`).run(...neonIds);
+          } catch {}
+        }
+      }
 
       for (const row of pgRows) {
         const keys = Object.keys(row);
@@ -237,8 +257,8 @@ async function restoreFromNeon(sqliteDb) {
           // Ignore insertion conflicts during hydration
         }
       }
-    }
 
+    }
     try {
       sqliteDb.exec("PRAGMA foreign_keys = ON;");
     } catch {}
