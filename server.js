@@ -301,9 +301,20 @@ CREATE TABLE IF NOT EXISTS audit_logs(id TEXT PRIMARY KEY, actor_id TEXT REFEREN
 CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, ip TEXT NOT NULL, success INTEGER NOT NULL, created_at TEXT NOT NULL);`);
 initUpgrades(db, DATA);
 if (process.env.DATABASE_URL) {
-  neonSync.restoreFromNeon(db).then(() => {
-    console.log("[NEON] Local store hydrated from Neon Cloud on startup.");
-  }).catch(e => console.error("[NEON] Initial hydration error:", e.message));
+  neonSync.attachDbSyncHooks(db);
+  neonSync
+    .restoreFromNeon(db)
+    .then(() => {
+      console.log("[NEON] Local store hydrated from Neon Cloud on startup.");
+      // After hydration, ensure any newly seeded local records (like super admin or schema defaults) are synced back
+      return neonSync.syncAllTables(db);
+    })
+    .then(() => {
+      console.log(
+        "[NEON] Initial two-way sync complete. Database is active and synced.",
+      );
+    })
+    .catch((e) => console.error("[NEON] Initial hydration error:", e.message));
 }
 
 const now = () => new Date().toISOString(),
@@ -340,9 +351,11 @@ function autoProvisionAdmin() {
 
   if (!adminEmail || !adminPassword) return;
 
-  const existingSuperAdmin = q(
-    "SELECT id, email, password_hash FROM users WHERE role='super_admin' LIMIT 1",
-  ) || q("SELECT id, email, password_hash FROM users WHERE role='admin' LIMIT 1");
+  const existingSuperAdmin =
+    q(
+      "SELECT id, email, password_hash FROM users WHERE role='super_admin' LIMIT 1",
+    ) ||
+    q("SELECT id, email, password_hash FROM users WHERE role='admin' LIMIT 1");
   if (existingSuperAdmin) {
     if (process.env.SYNC_ADMIN_CREDENTIALS === "true") {
       const storedHash = passwordHash(adminPassword);
@@ -357,7 +370,10 @@ function autoProvisionAdmin() {
         `[AUTH] Super Admin credentials synced for ${adminEmail.toLowerCase()}`,
       );
     } else {
-      run("UPDATE users SET role='super_admin' WHERE id=?", existingSuperAdmin.id);
+      run(
+        "UPDATE users SET role='super_admin' WHERE id=?",
+        existingSuperAdmin.id,
+      );
     }
     return;
   }
@@ -479,7 +495,8 @@ function handleCors(req, res) {
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods":
           "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, Authorization",
+        "Access-Control-Allow-Headers":
+          "Content-Type, X-CSRF-Token, Authorization",
         "Access-Control-Max-Age": "86400",
         Vary: "Origin",
       });
@@ -487,7 +504,11 @@ function handleCors(req, res) {
       return true;
     }
     res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: `Origin '${origin}' not allowed by CORS. Set CLIENT_ORIGIN or CORS_ORIGINS to include this domain.` }));
+    res.end(
+      JSON.stringify({
+        error: `Origin '${origin}' not allowed by CORS. Set CLIENT_ORIGIN or CORS_ORIGINS to include this domain.`,
+      }),
+    );
     return true;
   }
   return false;
@@ -510,7 +531,8 @@ function json(res, status, obj, headers = {}) {
 function cookie(res, token, maxAge = 28800) {
   // Use SameSite=None and Secure=true for cross-origin frontend (e.g. Hostinger frontend -> Render API)
   // When SameSite=None, modern browsers require Secure flag.
-  const isSecureCookie = secure || process.env.RENDER || Boolean(process.env.HTTPS);
+  const isSecureCookie =
+    secure || process.env.RENDER || Boolean(process.env.HTTPS);
   const sameSite = isSecureCookie ? "None" : "Lax";
   const secureAttr = isSecureCookie ? "; Secure" : "";
   // Note: __Host- prefix requires cookie to be set from same-origin with Secure flag.
@@ -593,8 +615,11 @@ function activity(user, actor, action, details = "") {
 function currentUser(req) {
   const c = parseCookies(req);
   const authHeader = req.headers.authorization || "";
-  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-  const token = bearerToken || c["__Host-macrow_session"] || c["macrow_session"];
+  const bearerToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  const token =
+    bearerToken || c["__Host-macrow_session"] || c["macrow_session"];
   if (!token) return null;
   const s = q(
     "SELECT user_id,csrf FROM sessions WHERE token_hash=? AND expires_at>? ",
@@ -606,7 +631,8 @@ function currentUser(req) {
     "SELECT u.id,u.email,u.name,u.role,u.active,u.company_id,c.status AS company_status FROM users u LEFT JOIN companies c ON c.id=u.company_id WHERE u.id=?",
     s.user_id,
   );
-  if (!u || !u.active || (u.company_status && u.company_status !== "Active")) return null;
+  if (!u || !u.active || (u.company_status && u.company_status !== "Active"))
+    return null;
   return { ...u, csrf: s.csrf };
 }
 function auth(req, res, roles) {
@@ -815,9 +841,9 @@ async function route(req, res) {
           "This invitation has already been activated. Sign in or ask an administrator for help.",
         );
       run(
-      "INSERT INTO users(id,company_id,email,name,role,password_hash,created_at) VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO users(id,company_id,email,name,role,password_hash,created_at) VALUES(?,?,?,?,?,?,?)",
         uid,
-      inv.company_id || null,
+        inv.company_id || null,
         inv.email,
         inv.name,
         inv.role || "employee",
@@ -847,7 +873,11 @@ async function route(req, res) {
       throw e;
     }
     const sessionResult = createSession(uid, res);
-    return json(res, 201, { user: publicUser(uid), csrf: sessionResult.csrf, token: sessionResult.token });
+    return json(res, 201, {
+      user: publicUser(uid),
+      csrf: sessionResult.csrf,
+      token: sessionResult.token,
+    });
   }
 
   let user = auth(req, res);
@@ -1072,11 +1102,28 @@ async function route(req, res) {
         "An invitation already exists for this email. Retry or resend it from onboarding status.",
       );
     if (user.company_id) {
-      const company = q("SELECT status,max_employees FROM companies WHERE id=?", user.company_id);
-      if (!company || company.status !== "Active") fail(403, "This company account is not active.");
-      const seats = Number(q("SELECT count(*) n FROM users WHERE company_id=? AND role<>'super_admin'", user.company_id)?.n || 0) +
-        Number(q("SELECT count(*) n FROM invites WHERE company_id=? AND used_at IS NULL AND email_status<>'revoked' AND expires_at>? AND role='employee'", user.company_id, now())?.n || 0);
-      if (seats >= Number(company.max_employees || 0)) fail(409, "The company has reached its employee limit.");
+      const company = q(
+        "SELECT status,max_employees FROM companies WHERE id=?",
+        user.company_id,
+      );
+      if (!company || company.status !== "Active")
+        fail(403, "This company account is not active.");
+      const seats =
+        Number(
+          q(
+            "SELECT count(*) n FROM users WHERE company_id=? AND role<>'super_admin'",
+            user.company_id,
+          )?.n || 0,
+        ) +
+        Number(
+          q(
+            "SELECT count(*) n FROM invites WHERE company_id=? AND used_at IS NULL AND email_status<>'revoked' AND expires_at>? AND role='employee'",
+            user.company_id,
+            now(),
+          )?.n || 0,
+        );
+      if (seats >= Number(company.max_employees || 0))
+        fail(409, "The company has reached its employee limit.");
     }
     const recent = Number(
       q(
@@ -1492,8 +1539,20 @@ async function route(req, res) {
     return json(res, 200, { ok: true });
   }
   if (req.method === "GET" && p === "/api/calendar") {
-    const company = user.role === "super_admin" ? { sql: "1=1", args: [] } : { sql: "COALESCE(c.company_id,'')=?", args: [String(user.company_id || "")] };
-    const employeeCompany = user.role === "super_admin" ? { sql: "1=1", args: [] } : { sql: "COALESCE(u.company_id,'')=?", args: [String(user.company_id || "")] };
+    const company =
+      user.role === "super_admin"
+        ? { sql: "1=1", args: [] }
+        : {
+            sql: "COALESCE(c.company_id,'')=?",
+            args: [String(user.company_id || "")],
+          };
+    const employeeCompany =
+      user.role === "super_admin"
+        ? { sql: "1=1", args: [] }
+        : {
+            sql: "COALESCE(u.company_id,'')=?",
+            args: [String(user.company_id || "")],
+          };
     return json(res, 200, {
       events: all(
         `SELECT c.*,u.name FROM calendar_events c JOIN users u ON u.id=c.created_by WHERE c.approved=1 AND ${company.sql} ORDER BY c.start_date`,

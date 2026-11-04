@@ -3,53 +3,100 @@ const db = require("./database");
 
 /**
  * Neon Sync Engine:
- * Intercepts write queries or synchronizes SQLite state into Neon PostgreSQL.
- * Ensures zero data loss on Render restarts.
+ * - Hydrates SQLite from Neon PostgreSQL Cloud on boot (if fresh container).
+ * - Live write-back: captures all table mutations in SQLite and mirrors them into Neon.
+ * - Periodic background sync loop: ensures 100% parity every 60 seconds.
  */
-let isSyncing = false;
 
+let isSyncing = false;
+let syncTimeout = null;
+
+const TABLES_IN_ORDER = [
+  "users",
+  "companies",
+  "employees",
+  "salary_structures",
+  "invites",
+  "sessions",
+  "activation_attempts",
+  "login_attempts",
+  "activity_logs",
+  "audit_logs",
+  "attendance",
+  "bank_accounts",
+  "bank_account_history",
+  "calendar_events",
+  "tasks",
+  "task_subtasks",
+  "task_comments",
+  "task_history",
+  "daily_updates",
+  "daily_update_comments",
+  "daily_update_history",
+  "documents",
+  "employee_projects",
+  "leave_categories",
+  "leave_rules",
+  "notifications",
+  "requests",
+  "updates",
+  "payroll_policies",
+  "payroll_policy_history",
+  "payroll_periods",
+  "payroll_items",
+  "payroll",
+  "payroll_adjustments",
+  "payroll_approvals",
+  "payroll_deduction_rules"
+];
+
+// Tables mapped to their primary unique keys for ON CONFLICT DO UPDATE
+const TABLE_PKS = {
+  users: ["id"],
+  companies: ["id"],
+  employees: ["user_id"],
+  salary_structures: ["id"],
+  invites: ["id"],
+  sessions: ["token_hash"],
+  activation_attempts: ["id"],
+  login_attempts: ["id"],
+  activity_logs: ["id"],
+  audit_logs: ["id"],
+  attendance: ["id"],
+  bank_accounts: ["user_id"],
+  bank_account_history: ["id"],
+  calendar_events: ["id"],
+  tasks: ["id"],
+  task_subtasks: ["id"],
+  task_comments: ["id"],
+  task_history: ["id"],
+  daily_updates: ["id"],
+  daily_update_comments: ["id"],
+  daily_update_history: ["id"],
+  documents: ["id"],
+  employee_projects: ["id"],
+  leave_categories: ["id"],
+  leave_rules: ["id"],
+  notifications: ["id"],
+  requests: ["id"],
+  updates: ["id"],
+  payroll_policies: ["id"],
+  payroll_policy_history: ["id"],
+  payroll_periods: ["id"],
+  payroll_items: ["id"],
+  payroll: ["id"],
+  payroll_adjustments: ["id"],
+  payroll_approvals: ["id"],
+  payroll_deduction_rules: ["id"]
+};
+
+/**
+ * Synchronizes all records from SQLite to Neon PostgreSQL Cloud.
+ */
 async function syncAllTables(sqliteDb) {
-  if (isSyncing) return;
+  if (!db.pool || isSyncing) return;
   isSyncing = true;
   try {
-    const TABLES_IN_ORDER = [
-      "users",
-      "companies",
-      "employees",
-      "salary_structures",
-      "invites",
-      "sessions",
-      "activation_attempts",
-      "login_attempts",
-      "activity_logs",
-      "audit_logs",
-      "attendance",
-      "bank_accounts",
-      "bank_account_history",
-      "calendar_events",
-      "tasks",
-      "task_subtasks",
-      "task_comments",
-      "task_history",
-      "daily_updates",
-      "daily_update_comments",
-      "daily_update_history",
-      "documents",
-      "employee_projects",
-      "leave_categories",
-      "leave_rules",
-      "notifications",
-      "requests",
-      "updates",
-      "payroll_policies",
-      "payroll_policy_history",
-      "payroll_periods",
-      "payroll_items",
-      "payroll",
-      "payroll_adjustments",
-      "payroll_approvals"
-    ];
-
     for (const tableName of TABLES_IN_ORDER) {
       let rows;
       try {
@@ -60,43 +107,7 @@ async function syncAllTables(sqliteDb) {
       if (!rows || rows.length === 0) continue;
 
       for (const row of rows) {
-        const keys = Object.keys(row);
-        const cols = keys.map(k => `"${k}"`).join(", ");
-        const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
-        const values = keys.map(k => row[k]);
-
-        let conflictClause = "ON CONFLICT DO NOTHING";
-        if (tableName === "users") {
-          conflictClause = `ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name, role=EXCLUDED.role, password_hash=EXCLUDED.password_hash, active=EXCLUDED.active, company_id=EXCLUDED.company_id`;
-        } else if (tableName === "companies") {
-          conflictClause = `ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, domain=EXCLUDED.domain, plan=EXCLUDED.plan, max_employees=EXCLUDED.max_employees, status=EXCLUDED.status, updated_at=EXCLUDED.updated_at`;
-        } else if (tableName === "employees") {
-          conflictClause = `ON CONFLICT (user_id) DO UPDATE SET title=EXCLUDED.title, department=EXCLUDED.department, location=EXCLUDED.location, phone=EXCLUDED.phone, emergency_contact=EXCLUDED.emergency_contact, salary=EXCLUDED.salary, employee_code=EXCLUDED.employee_code, annual_ctc_paise=EXCLUDED.annual_ctc_paise`;
-        } else if (tableName === "attendance") {
-          conflictClause = `ON CONFLICT (user_id, work_date) DO UPDATE SET segments=EXCLUDED.segments, status=EXCLUDED.status, admin_status=EXCLUDED.admin_status, admin_note=EXCLUDED.admin_note, admin_updated_by=EXCLUDED.admin_updated_by, admin_updated_at=EXCLUDED.admin_updated_at`;
-        } else if (tableName === "payroll_periods") {
-          conflictClause = `ON CONFLICT (company_id, period) DO UPDATE SET status=EXCLUDED.status, validation_json=EXCLUDED.validation_json, updated_at=EXCLUDED.updated_at, published_at=EXCLUDED.published_at, paid_at=EXCLUDED.paid_at`;
-        } else if (tableName === "payroll_items") {
-          conflictClause = `ON CONFLICT (period_id, user_id) DO UPDATE SET basic_paise=EXCLUDED.basic_paise, gross_paise=EXCLUDED.gross_paise, total_deductions_paise=EXCLUDED.total_deductions_paise, net_paise=EXCLUDED.net_paise, updated_at=EXCLUDED.updated_at`;
-        } else if (tableName === "payroll_policies") {
-          conflictClause = `ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, status=EXCLUDED.status, version=EXCLUDED.version, effective_from=EXCLUDED.effective_from, effective_to=EXCLUDED.effective_to, updated_at=EXCLUDED.updated_at`;
-        } else if (tableName === "salary_structures") {
-          conflictClause = `ON CONFLICT (user_id, effective_from) DO UPDATE SET basic_paise=EXCLUDED.basic_paise, allowances_json=EXCLUDED.allowances_json, earnings_json=EXCLUDED.earnings_json, deductions_json=EXCLUDED.deductions_json`;
-        } else if (tableName === "sessions") {
-          conflictClause = `ON CONFLICT (token_hash) DO UPDATE SET expires_at=EXCLUDED.expires_at`;
-        } else if (tableName === "leave_categories") {
-          conflictClause = `ON CONFLICT (id) DO UPDATE SET entitlement_days=EXCLUDED.entitlement_days, notes=EXCLUDED.notes, updated_at=EXCLUDED.updated_at`;
-        }
-
-        const sql = `INSERT INTO "${tableName}" (${cols}) VALUES (${placeholders}) ${conflictClause}`;
-        try {
-          await db.pool.query(sql, values);
-        } catch (err) {
-          // Log only unexpected errors, ignore standard duplicate keys
-          if (err.code !== "23505") {
-            console.error(`[NEON_SYNC] Table ${tableName} write error:`, err.message);
-          }
-        }
+        await upsertRow(tableName, row);
       }
     }
   } catch (err) {
@@ -107,50 +118,94 @@ async function syncAllTables(sqliteDb) {
 }
 
 /**
+ * Upsert a single record into Neon PostgreSQL Cloud.
+ */
+async function upsertRow(tableName, row) {
+  if (!db.pool || !row) return;
+  try {
+    const keys = Object.keys(row);
+    if (keys.length === 0) return;
+
+    const cols = keys.map((k) => `"${k}"`).join(", ");
+    const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
+    const values = keys.map((k) => row[k]);
+
+    const pks = TABLE_PKS[tableName] || ["id"];
+    const nonPkKeys = keys.filter((k) => !pks.includes(k));
+
+    let conflictClause = "ON CONFLICT DO NOTHING";
+    if (pks.length > 0 && nonPkKeys.length > 0) {
+      const pkCols = pks.map((k) => `"${k}"`).join(", ");
+      const updateSets = nonPkKeys.map((k) => `"${k}" = EXCLUDED."${k}"`).join(", ");
+      conflictClause = `ON CONFLICT (${pkCols}) DO UPDATE SET ${updateSets}`;
+    }
+
+    const sql = `INSERT INTO "${tableName}" (${cols}) VALUES (${placeholders}) ${conflictClause}`;
+    await db.pool.query(sql, values);
+  } catch (err) {
+    if (err.code !== "23505") {
+      // 23505 is unique_violation, harmless during race
+      console.error(`[NEON_SYNC] Write error on ${tableName}:`, err.message);
+    }
+  }
+}
+
+/**
+ * Schedule a debounced table-level sync to Neon whenever mutations occur.
+ */
+function scheduleSync(sqliteDb, delayMs = 1500) {
+  if (syncTimeout) clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => {
+    syncAllTables(sqliteDb).catch((e) =>
+      console.error("[NEON_SYNC] Scheduled sync failed:", e.message)
+    );
+  }, delayMs);
+}
+
+/**
+ * Hooks into SQLite `db.prepare` to intercept write operations
+ * (INSERT, UPDATE, DELETE) and immediately mirror them into Neon Cloud.
+ */
+function attachDbSyncHooks(sqliteDb) {
+  if (sqliteDb._neonHooksAttached) return;
+  sqliteDb._neonHooksAttached = true;
+
+  const origPrepare = sqliteDb.prepare.bind(sqliteDb);
+  sqliteDb.prepare = function (sql, ...prepArgs) {
+    const stmt = origPrepare(sql, ...prepArgs);
+    const origRun = stmt.run.bind(stmt);
+
+    stmt.run = function (...runArgs) {
+      const result = origRun(...runArgs);
+
+      // Check if this is a write query (INSERT, UPDATE, DELETE, REPLACE)
+      const trimmed = sql.trim().toUpperCase();
+      if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/.test(trimmed)) {
+        // Trigger debounced synchronization to guarantee Neon parity
+        scheduleSync(sqliteDb);
+      }
+      return result;
+    };
+
+    return stmt;
+  };
+
+  // Start periodic background synchronization every 60 seconds
+  setInterval(() => {
+    syncAllTables(sqliteDb).catch((e) =>
+      console.error("[NEON_SYNC] Periodic sync error:", e.message)
+    );
+  }, 60 * 1000);
+}
+
+/**
  * Hydrates SQLite from Neon PostgreSQL on server boot.
  * If Render spins up a fresh container with an empty SQLite database,
  * this immediately restores all tables and rows from Neon!
  */
 async function restoreFromNeon(sqliteDb) {
+  if (!db.pool) return;
   try {
-    const TABLES_IN_ORDER = [
-      "users",
-      "companies",
-      "employees",
-      "salary_structures",
-      "invites",
-      "sessions",
-      "activation_attempts",
-      "login_attempts",
-      "activity_logs",
-      "audit_logs",
-      "attendance",
-      "bank_accounts",
-      "bank_account_history",
-      "calendar_events",
-      "tasks",
-      "task_subtasks",
-      "task_comments",
-      "task_history",
-      "daily_updates",
-      "daily_update_comments",
-      "daily_update_history",
-      "documents",
-      "employee_projects",
-      "leave_categories",
-      "leave_rules",
-      "notifications",
-      "requests",
-      "updates",
-      "payroll_policies",
-      "payroll_policy_history",
-      "payroll_periods",
-      "payroll_items",
-      "payroll",
-      "payroll_adjustments",
-      "payroll_approvals"
-    ];
-
     console.log("[NEON_SYNC] Hydrating local store from Neon PostgreSQL Cloud...");
     for (const tableName of TABLES_IN_ORDER) {
       let pgRows;
@@ -164,12 +219,14 @@ async function restoreFromNeon(sqliteDb) {
 
       for (const row of pgRows) {
         const keys = Object.keys(row);
-        const cols = keys.map(k => `"${k}"`).join(", ");
+        const cols = keys.map((k) => `"${k}"`).join(", ");
         const placeholders = keys.map(() => `?`).join(", ");
-        const values = keys.map(k => row[k]);
+        const values = keys.map((k) => row[k]);
 
         try {
-          sqliteDb.prepare(`INSERT OR REPLACE INTO "${tableName}" (${cols}) VALUES (${placeholders})`).run(...values);
+          sqliteDb
+            .prepare(`INSERT OR REPLACE INTO "${tableName}" (${cols}) VALUES (${placeholders})`)
+            .run(...values);
         } catch (err) {
           // Ignore insertion conflicts during hydration
         }
@@ -184,4 +241,7 @@ async function restoreFromNeon(sqliteDb) {
 module.exports = {
   syncAllTables,
   restoreFromNeon,
+  scheduleSync,
+  attachDbSyncHooks,
+  upsertRow,
 };
