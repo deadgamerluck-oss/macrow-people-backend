@@ -306,7 +306,7 @@ if (process.env.DATABASE_URL) {
     .restoreFromNeon(db)
     .then(() => {
       console.log("[NEON] Local store hydrated from Neon Cloud on startup.");
-      // After hydration, ensure any newly seeded local records (like super admin or schema defaults) are synced back
+      autoProvisionAdmin();
       return neonSync.syncAllTables(db);
     })
     .then(() => {
@@ -315,6 +315,8 @@ if (process.env.DATABASE_URL) {
       );
     })
     .catch((e) => console.error("[NEON] Initial hydration error:", e.message));
+} else {
+  autoProvisionAdmin();
 }
 
 const now = () => new Date().toISOString(),
@@ -424,7 +426,7 @@ function autoProvisionAdmin() {
     );
   }
 }
-autoProvisionAdmin();
+// autoProvisionAdmin is invoked after Neon hydration
 function nextEmployeeCode() {
   const used = new Set(
     all("SELECT employee_code FROM employees WHERE employee_code<>''").map(
