@@ -207,6 +207,12 @@ async function restoreFromNeon(sqliteDb) {
   if (!db.pool) return;
   try {
     console.log("[NEON_SYNC] Hydrating local store from Neon PostgreSQL Cloud...");
+    // Temporarily turn OFF foreign key checks during bulk restoration
+    // to prevent circular or cross-table dependency failures (e.g. companies referencing users and users referencing companies)
+    try {
+      sqliteDb.exec("PRAGMA foreign_keys = OFF;");
+    } catch {}
+
     for (const tableName of TABLES_IN_ORDER) {
       let pgRows;
       try {
@@ -232,6 +238,11 @@ async function restoreFromNeon(sqliteDb) {
         }
       }
     }
+
+    try {
+      sqliteDb.exec("PRAGMA foreign_keys = ON;");
+    } catch {}
+
     console.log("[NEON_SYNC] Hydration complete. All records from Neon are live in memory/cache.");
   } catch (err) {
     console.error("[NEON_SYNC] Failed to restore from Neon:", err.message);
