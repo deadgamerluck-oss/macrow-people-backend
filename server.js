@@ -1595,6 +1595,23 @@ async function route(req, res) {
     audit(user.id, "Created calendar event", "calendar_event", eid);
     return json(res, 201, { id: eid });
   }
+  const deleteCalMatch = p.match(/^\/api\/calendar\/([\w-]+)$/);
+  if (req.method === "DELETE" && deleteCalMatch) {
+    if (user.role !== "admin" && user.role !== "super_admin")
+      return json(res, 403, { error: "Admin only." });
+    const eid = deleteCalMatch[1];
+    const event = q("SELECT * FROM calendar_events WHERE id=?", eid);
+    if (!event) fail(404, "Calendar event not found.");
+    if (
+      user.role !== "super_admin" &&
+      String(event.company_id || "") !== String(user.company_id || "")
+    ) {
+      fail(403, "Access denied.");
+    }
+    run("DELETE FROM calendar_events WHERE id=?", eid);
+    audit(user.id, "Deleted calendar event", "calendar_event", eid, `${event.kind}: ${event.title}`);
+    return json(res, 200, { ok: true, id: eid });
+  }
   if (req.method === "POST" && p === "/api/attendance/action") {
     const d = await body(req),
       action = clean(d.action, 20),

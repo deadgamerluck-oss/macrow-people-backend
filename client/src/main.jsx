@@ -2308,6 +2308,9 @@ function PageContent({ user, page, setPage, toast, setModal, refresh, refreshPag
         setSelectedDate={setSelectedDate}
         saveForm={saveForm}
         formError={commonFormError}
+        setModal={setModal}
+        toast={toast}
+        reload={reload}
       />
     );
   if (
@@ -3090,7 +3093,45 @@ function CalendarPage({
   setSelectedDate,
   saveForm,
   formError,
+  setModal,
+  toast,
+  reload,
 }) {
+  const [deletingId, setDeletingId] = useState("");
+  const handleDeleteEvent = (eventItem) => {
+    if (!setModal) {
+      if (window.confirm(`Are you sure you want to delete "${eventItem.title}"?`)) {
+        (async () => {
+          try {
+            await api(`/api/calendar/${eventItem.id}`, { method: "DELETE" });
+            if (toast) toast("Event deleted successfully.");
+            if (reload) await reload();
+          } catch (err) {
+            if (toast) toast(err.message);
+          }
+        })();
+      }
+      return;
+    }
+    setModal({
+      type: "confirm",
+      title: "Delete calendar event?",
+      description: `Delete "${eventItem.title}" (${eventItem.start_date}${eventItem.end_date && eventItem.end_date !== eventItem.start_date ? ` to ${eventItem.end_date}` : ""})? This action cannot be undone.`,
+      confirmLabel: "Delete event",
+      submit: async (e) => {
+        e.preventDefault();
+        setModal((cur) => ({ ...cur, busy: true }));
+        try {
+          await api(`/api/calendar/${eventItem.id}`, { method: "DELETE" });
+          setModal(null);
+          if (toast) toast("Event deleted successfully.");
+          if (reload) await reload();
+        } catch (err) {
+          setModal((cur) => ({ ...cur, busy: false, error: err.message }));
+        }
+      },
+    });
+  };
   const year = month.getFullYear(),
     m = month.getMonth(),
     offset = new Date(year, m, 1).getDay();
@@ -3179,7 +3220,7 @@ function CalendarPage({
           ))}
           {cells}
         </div>
-        <div className="calendar-day-detail"><div className="calendar-day-date"><span>{selectedDay.toLocaleDateString("en-IN",{weekday:"long"})}</span><b>{selectedDay.toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</b><small>{weekend?"Weekend · paid off":"Working day"}</small></div><div className="calendar-day-events">{civicDay&&<article className="calendar-note civic"><span>🇮🇳</span><div><b>{civicDay}</b><small>India / international observance · informational only; not automatically a company holiday</small></div></article>}{selectedEvents.map(x=><article className={`calendar-note ${x.kind}`} key={x.id}><span>{x.kind==="holiday"?"☼":x.kind==="leave"?"◷":"✦"}</span><div><b>{x.title}</b><small>{x.kind==="holiday"?`Paid by company${x.description?` · ${x.description}`:""}`:x.description||x.kind}</small></div></article>)}{!civicDay&&!selectedEvents.length&&<Empty>No company events or public observances are listed for this date.</Empty>}</div></div>
+        <div className="calendar-day-detail"><div className="calendar-day-date"><span>{selectedDay.toLocaleDateString("en-IN",{weekday:"long"})}</span><b>{selectedDay.toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</b><small>{weekend?"Weekend · paid off":"Working day"}</small></div><div className="calendar-day-events">{civicDay&&<article className="calendar-note civic"><span>🇮🇳</span><div><b>{civicDay}</b><small>India / international observance · informational only; not automatically a company holiday</small></div></article>}{selectedEvents.map(x=><article className={`calendar-note ${x.kind}`} key={x.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px"}}><span>{x.kind==="holiday"?"☼":x.kind==="leave"?"◷":"✦"}</span><div style={{flex:1}}><b>{x.title}</b><small>{x.kind==="holiday"?`Paid by company${x.description?` · ${x.description}`:""}`:x.description||x.kind}</small></div>{["admin","super_admin"].includes(user.role)&&x.kind!=="leave"&&<button type="button" className="button danger" style={{marginLeft:"auto",padding:"5px 10px",fontSize:"11px",minHeight:"32px"}} onClick={()=>handleDeleteEvent(x)}>Delete</button>}</article>)}{!civicDay&&!selectedEvents.length&&<Empty>No company events or public observances are listed for this date.</Empty>}</div></div>
         <p className="help">Festival dates include the Government of India’s 2026 central holiday calendar where published. Lunar dates can vary by local sighting or regional calendar. Observances are informational; only holidays added by Admin affect leave calculations.</p>
       </Panel>
     </>
